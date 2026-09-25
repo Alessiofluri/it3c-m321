@@ -4,6 +4,10 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY pom.xml .
+# Maven muss JEDES Modul lesen koennen, das im Eltern-POM steht, sonst
+# bricht es mit "Child module does not exist" ab. Die Quellen der
+# anderen Module braucht es nicht — nur ihre pom.xml.
+COPY chat-service/pom.xml chat-service/pom.xml
 COPY batch-writer/pom.xml batch-writer/pom.xml
 COPY batch-writer/src batch-writer/src
 # Tests werden hier übersprungen: Testcontainers bräuchte einen Docker-Daemon
