@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: batch-writer
+
+  rabbitmq:
+    # Im Docker-Netz heisst der Broker "rabbitmq". Beim Start ausserhalb
+    # von Docker greift der Vorgabewert "localhost".
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+  datasource:
+    # Dieselbe Regel wie beim Broker: im Netz "postgres", sonst "localhost".
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:chat}
+    username: ${POSTGRES_USER:chat}
+    password: ${POSTGRES_PASSWORD:chat}
+
+logging:
+  level:
+    # Im Unterricht wollen wir jeden Schritt sehen.
+    ch.benedict.m321: DEBUG
