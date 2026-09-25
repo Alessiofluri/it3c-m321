@@ -56,10 +56,10 @@ funktioniert.
 
 ### 1 · Modul anlegen
 
-- [ ] `batch-writer/pom.xml` mit Eltern-POM, Modul in `pom.xml` eintragen
-- [ ] `BatchWriterApplication.java`
-- [ ] `application.yml` mit RabbitMQ- und Datenquellen-Einstellungen aus Umgebungsvariablen
-- [ ] `Dockerfile` nach dem Vorbild des `chat-service` (zweistufig, Tests übersprungen)
+- [x] `batch-writer/pom.xml` mit Eltern-POM, Modul in `pom.xml` eintragen
+- [x] `BatchWriterApplication.java`
+- [x] `application.yml` mit RabbitMQ- und Datenquellen-Einstellungen aus Umgebungsvariablen
+- [x] `Dockerfile` nach dem Vorbild des `chat-service` (zweistufig, Tests übersprungen)
 
 **Test:** `BatchWriterApplicationTests` — der Spring-Kontext startet.
 **Warum zuerst:** Ohne Modul gibt es nichts, wohin der Code kommt. Der Kontexttest fängt
@@ -67,9 +67,9 @@ Tippfehler in `application.yml` sofort ab.
 
 ### 2 · Postgres in den Stack
 
-- [ ] Dienst `postgres` in `docker-compose.yml`: Image `postgres:16`, Healthcheck, Volume,
+- [x] Dienst `postgres` in `docker-compose.yml`: Image `postgres:16`, Healthcheck, Volume,
       **kein** `ports:`
-- [ ] `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` in `.env.example`
+- [x] `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` in `.env.example`
 
 **Test:** `docker compose up -d postgres` und `docker compose ps` zeigt `healthy`.
 **Warum hier:** Die Datenbank muss stehen, bevor jemand ein Schema hineinlegt. Der
@@ -77,8 +77,8 @@ Tippfehler in `application.yml` sofort ab.
 
 ### 3 · Schema mit Flyway
 
-- [ ] `V1__create_message_table.sql`: Tabelle `message` und Index nach `PLANUNG.md` 3.7
-- [ ] Flyway-Abhängigkeit und Einstellungen
+- [x] `V1__create_message_table.sql`: Tabelle `message` und Index nach `PLANUNG.md` 3.7
+- [x] Flyway-Abhängigkeit und Einstellungen
 
 **Test:** `MessageSchemaTest` mit Testcontainers-Postgres — nach dem Start existiert die
 Tabelle mit allen sechs Spalten.
@@ -86,8 +86,8 @@ Tabelle mit allen sechs Spalten.
 
 ### 4 · Repository mit Stapel-INSERT
 
-- [ ] `MessageRow` — was in einer Tabellenzeile steht
-- [ ] `MessageRepository.insertBatch(List<MessageRow>)` mit
+- [x] `MessageRow` — was in einer Tabellenzeile steht
+- [x] `MessageRepository.insertBatch(List<MessageRow>)` mit
       `JdbcTemplate.batchUpdate` und `ON CONFLICT (id) DO NOTHING`, `@Transactional`
 
 **Test:** `MessageRepositoryTest` — (a) zehn Zeilen werden geschrieben, (b) dieselbe ID
@@ -97,9 +97,9 @@ ohne Queue geprüft.
 
 ### 5 · Queue-Vertrag und Konverter
 
-- [ ] `ChatMessage` — **eigene** Kopie des Records, bewusst nicht geteilt
-- [ ] `QueueNames` — eigene Kopie der drei Namen
-- [ ] `RabbitConfig`: JSON-Konverter, Queue und DLQ deklarieren, Listener-Factory mit
+- [x] `ChatMessage` — **eigene** Kopie des Records, bewusst nicht geteilt
+- [x] `QueueNames` — eigene Kopie der drei Namen
+- [x] `RabbitConfig`: JSON-Konverter, Queue und DLQ deklarieren, Listener-Factory mit
       Stapelbetrieb (500 Stück / 200 ms / `prefetch` 500)
 
 **Test:** `ChatMessageConversionTest` — ein JSON ohne `__TypeId__`, nur mit
@@ -109,9 +109,9 @@ es ohne Broker und ohne Datenbank.
 
 ### 6 · Listener: von der Queue in die Tabelle
 
-- [ ] `MessageBatchListener` mit `@RabbitListener` auf `chat.persist`, Parameter
+- [x] `MessageBatchListener` mit `@RabbitListener` auf `chat.persist`, Parameter
       `List<ChatMessage>`
-- [ ] Umwandlung `ChatMessage` → `MessageRow`, dann `insertBatch`
+- [x] Umwandlung `ChatMessage` → `MessageRow`, dann `insertBatch`
 
 **Test:** `MessageBatchListenerIntegrationTest` (**T-3**) — echte Queue und echte
 Datenbank über Testcontainers: 50 Nachrichten gesendet, 50 Zeilen in der Tabelle, Queue
@@ -120,7 +120,7 @@ leer.
 
 ### 7 · Duplikat über die Queue
 
-- [ ] Kein neuer Code erwartet — Aufgabe 4 und 5 sollten reichen
+- [x] Kein neuer Code erwartet — Aufgabe 4 und 5 sollten reichen
 
 **Test:** `DuplicateMessageIntegrationTest` (**T-5**) — dieselbe Nachricht zweimal roh in
 `chat.persist` gelegt, nur mit `content_type: application/json`. Erwartet: eine Zeile,
@@ -131,9 +131,9 @@ im Git-Log genau, welcher.
 
 ### 8 · Datenbankausfall aushalten
 
-- [ ] Spring Retry auf dem Schreibweg: 20 Versuche, 1 s bis 5 s, nur bei
+- [x] Spring Retry auf dem Schreibweg: 20 Versuche, 1 s bis 5 s, nur bei
       `DataAccessException`
-- [ ] Nach Erschöpfung: Ausnahme weiterreichen, damit der Stapel wieder in die Queue geht
+- [x] Nach Erschöpfung: Ausnahme weiterreichen, damit der Stapel wieder in die Queue geht
 
 **Test:** `DatabaseOutageTest` (**T-7**) — ein Repository, das die ersten Versuche
 scheitern lässt und danach gelingt. Erwartet: die Zeilen sind am Ende geschrieben, ohne
@@ -142,7 +142,7 @@ dass jemand etwas neu startet.
 
 ### 9 · Unlesbare Nachrichten abweisen
 
-- [ ] Pflichtfelder prüfen; bei `null` oder ungültigem JSON
+- [x] Pflichtfelder prüfen; bei `null` oder ungültigem JSON
       `AmqpRejectAndDontRequeueException`, damit die Nachricht in `chat.dlq` landet
 
 **Test:** `InvalidMessageIntegrationTest` — kaputtes JSON in die Queue, erwartet: keine
@@ -153,9 +153,9 @@ Wiederholen hilft nie.
 
 ### 10 · In den Stack einhängen
 
-- [ ] Dienst `batch-writer` in `docker-compose.yml`, `depends_on` auf `postgres`
+- [x] Dienst `batch-writer` in `docker-compose.yml`, `depends_on` auf `postgres`
       (`service_healthy`) und `rabbitmq` (`service_healthy`), **kein** `ports:`
-- [ ] Tabelle „Stand" im `README.md` nachführen
+- [x] Tabelle „Stand" im `README.md` nachführen
 
 **Test:** Abnahmekriterien A2 bis A9 aus der Spezifikation, von Hand am laufenden Stack.
 **Warum zuletzt:** Erst jetzt gibt es einen Dienst, der beim Starten auch etwas tut.
@@ -174,3 +174,37 @@ Wiederholen hilft nie.
 | S6 Zwei Instanzen | Competing Consumers, kein Zustand im Speicher | 6, 10 |
 | S7 Datenbank weg | Spring Retry | 8 |
 | S8 Regeln aus `CLAUDE.md` | gilt in jeder Aufgabe | 1–10 |
+
+---
+
+## Ergebnis der Abnahme
+
+Gemessen am 25.09.2026 am laufenden Stack, nach der Reihenfolge der Abnahmekriterien aus
+der Spezifikation. Gemessen wurde von innen über `docker compose exec`, weil kein
+Container einen Port veröffentlicht.
+
+| Szenario | Erwartet | Gemessen |
+|---|---|---|
+| S1 `mvn clean test` | ein Lauf, alles grün | 25 Tests, 0 Fehler, `BUILD SUCCESS` |
+| S2 frischer Klon, `.env` aus `.env.example` | alle Dienste laufen, kein Port veröffentlicht | 4 Dienste `running`, `postgres` und `rabbitmq` `healthy`, alle Publishers leer; 200 gesendete Nachrichten landeten in der Tabelle |
+| S3 1000 Nachrichten | ≤ 60 s bis alle 1000 da sind, Queue leer | nach ~5 s: 1000 Zeilen, `chat.persist` = 0, `chat.dlq` = 0 |
+| S4 Writer gestoppt, 1000 gesendet, dann gestartet | nichts verloren, ≤ 100 Transaktionen | Queue hielt 1000 Nachrichten, danach 1000 Zeilen mit **49** Transaktionen |
+| S5 dieselbe Nachricht zweimal, nur `content_type` | genau eine Zeile, nichts in `chat.dlq` | 1 Zeile, `chat.dlq` = 0 (Test `T-5`) |
+| S6 zwei Instanzen, 1000 Nachrichten | beide hängen an der Queue, alle da, keine doppelt | 2 Consumer auf `chat.persist`, 1000 Zeilen, 1000 verschiedene IDs |
+| S7 Postgres 15 s weg, 300 Nachrichten | ≤ 90 s bis alle da, kein Neustart von Hand | 300 Zeilen, `RestartCount` = 0, Dienst durchgehend `running` |
+| S8 Quelltext | keine Streams, Kommentare, `.env` nicht im Repo | keine Treffer für `.stream()`, jede Klasse und Methode kommentiert, `.env` nur als `.env.example` im Repo |
+
+**Was beim Bauen schiefging und korrigiert wurde** — für das Code-Review-Gespräch
+festgehalten:
+
+1. **`@EnableRetry` ohne AspectJ.** Der Kontext startete gar nicht (`NoClassDefFoundError:
+   org/aspectj/lang/annotation/Pointcut`). `spring-retry` legt seine Wiederholung als
+   Aspekt um die Methode und braucht dafür `spring-boot-starter-aop`.
+2. **Docker-Build nach dem zweiten Modul.** Sobald `batch-writer` im Eltern-POM stand,
+   scheiterte der Image-Build mit `Child module /build/chat-service does not exist` — und
+   zwar für **beide** Dienste. Maven muss jedes im Eltern-POM genannte Modul lesen können.
+   Beide Dockerfiles kopieren jetzt alle Modul-`pom.xml`.
+3. **Spezifikation 3.4 war zu pauschal.** Der erste Entwurf behauptete, eine kaputte
+   Nachricht störe den Stapel nicht. Das stimmt nur für ein fehlendes Pflichtfeld — bei
+   unlesbarem JSON scheitert schon der Konverter und reisst den ganzen Stapel mit. Der
+   Abschnitt unterscheidet jetzt beide Fälle.
