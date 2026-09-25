@@ -28,6 +28,14 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
+        <!-- Jackson. Ohne Web-Starter kommt es nicht von allein mit,
+             der JSON-Konverter der Queue braucht es aber. Bringt auch
+             die Unterstuetzung fuer Instant im ISO-8601-Format mit. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+
         <!-- JdbcTemplate. Bewusst KEIN JPA: batchUpdate ist genau das,
              was dieser Dienst zeigen soll (PLANUNG.md 2.1). -->
         <dependency>
