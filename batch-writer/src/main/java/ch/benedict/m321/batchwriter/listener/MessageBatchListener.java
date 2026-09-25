@@ -7,6 +7,7 @@ import ch.benedict.m321.batchwriter.repository.MessageRow;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -33,6 +34,10 @@ public class MessageBatchListener {
 
     private final MessageRepository messageRepository;
 
+    /** Nur fuer den einen Fall gebraucht: eine unvollstaendige Nachricht
+     * aufs Abstellgleis legen. */
+    private final RabbitTemplate rabbitTemplate;
+
     /**
      * Nimmt einen ganzen Stapel entgegen.
      *
@@ -51,11 +56,60 @@ public class MessageBatchListener {
         List<MessageRow> rows = new ArrayList<>();
 
         for (ChatMessage message : messages) {
-            MessageRow row = toRow(message);
-            rows.add(row);
+            boolean complete = isComplete(message);
+
+            if (complete) {
+                MessageRow row = toRow(message);
+                rows.add(row);
+            } else {
+                moveToDeadLetterQueue(message);
+            }
+        }
+
+        if (rows.isEmpty()) {
+            return;
         }
 
         messageRepository.insertBatch(rows);
+    }
+
+    /**
+     * Prueft, ob alle Pflichtfelder da sind.
+     *
+     * Der chat-service validiert bereits, bevor er sendet. Wer aber von
+     * Hand etwas in die Queue legt, umgeht das. Ohne diese Pruefung
+     * wuerde der Stapel am NOT NULL der Tabelle scheitern — und damit
+     * wuerden auch alle gesunden Nachrichten desselben Stapels erneut
+     * zugestellt.
+     */
+    private boolean isComplete(ChatMessage message) {
+        if (message.id() == null || message.roomId() == null) {
+            return false;
+        }
+        if (message.senderId() == null || message.senderName() == null) {
+            return false;
+        }
+        if (message.content() == null || message.sentAt() == null) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Legt eine unvollstaendige Nachricht aufs Abstellgleis und macht
+     * mit dem Rest des Stapels weiter.
+     *
+     * Bewusst kein erneuter Versuch: An einer Nachricht, der ein Feld
+     * fehlt, aendert sich beim zehnten Mal nichts. Sie wuerde den
+     * Stapel endlos blockieren. Das ist der Unterschied zum Ausfall der
+     * Datenbank, wo Warten hilft.
+     *
+     * Bewusst auch nicht der ganze Stapel: Die uebrigen Nachrichten sind
+     * in Ordnung und sollen geschrieben werden.
+     */
+    private void moveToDeadLetterQueue(ChatMessage message) {
+        log.warn("Message {} is incomplete and moved to {}", message.id(), QueueNames.DEAD_LETTER_QUEUE);
+        rabbitTemplate.convertAndSend(QueueNames.DEAD_LETTER_QUEUE, message);
     }
 
     /**

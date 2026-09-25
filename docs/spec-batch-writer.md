@@ -159,18 +159,31 @@ gemeinsam sehen.
 
 ### 3.4 Fehlerfall: unlesbare oder unvollständige Nachricht
 
-**Verhalten:** Die Nachricht wird **nicht** erneut zugestellt, sondern landet in
-`chat.dlq`. Der Stapel läuft mit den übrigen Nachrichten weiter.
+Hier sind **zwei** Fälle zu unterscheiden. Sie verhalten sich verschieden, und der
+Unterschied ist keine Feinheit:
 
-**Wie:** Beim Umwandeln von JSON schlägt der Konverter fehl, oder ein Pflichtfeld ist
-`null`. In beiden Fällen wird eine `AmqpRejectAndDontRequeueException` geworfen. Die
-Queue `chat.persist` ist bereits mit Dead-Letter-Exchange `""` und Routing-Key `chat.dlq`
-angelegt (`RabbitConfig`), also genügt das Ablehnen ohne Requeue.
+| Fall | Was passiert | Folge für den Rest des Stapels |
+|---|---|---|
+| **Pflichtfeld fehlt**, JSON ist aber lesbar | Der Listener erkennt es selbst und legt genau diese Nachricht nach `chat.dlq` | Die übrigen Nachrichten werden normal geschrieben |
+| **JSON ist gar nicht lesbar** | Der Konverter scheitert, bevor unser Code läuft. Spring lehnt den **ganzen Stapel** ohne Requeue ab, er geht nach `chat.dlq` | Auch gesunde Nachrichten desselben Stapels landen dort |
 
-**Warum nicht erneut versuchen?** Eine Nachricht, die sich nicht lesen lässt, lässt sich
-auch beim zehnten Mal nicht lesen. Sie würde die Queue endlos blockieren. Das ist der
-Unterschied zum Datenbankausfall in 3.5: dort ist der **Empfänger** kaputt, hier die
-**Nachricht**.
+**Warum wir den ersten Fall selbst behandeln:** Ohne die Prüfung im Listener würde der
+Stapel erst am `NOT NULL` der Tabelle scheitern. Dann wäre die ganze Transaktion hinüber,
+und alle gesunden Nachrichten desselben Stapels kämen erneut — immer wieder, weil die
+kaputte Nachricht ja bei jedem Versuch wieder dabei wäre. Eine einzige unvollständige
+Nachricht könnte damit den Schreibweg dauerhaft blockieren.
+
+**Warum wir den zweiten Fall nicht auch auseinandernehmen:** Dazu müsste der Listener
+rohe `Message`-Objekte entgegennehmen und jede einzeln selbst umwandeln. Das wäre
+deutlich mehr Code für einen Fall, der im Betrieb nicht vorkommt: Der `chat-service` ist
+der einzige Erzeuger, und er sendet immer gültiges JSON. Auftreten kann der Fall nur,
+wenn jemand von Hand etwas in die Queue legt. Das ist bewusst in Kauf genommen und hier
+benannt, statt es zu verschweigen.
+
+**Warum in beiden Fällen kein erneuter Versuch?** Eine Nachricht, die sich nicht lesen
+lässt, lässt sich auch beim zehnten Mal nicht lesen. Sie würde die Queue endlos
+blockieren. Das ist der Unterschied zum Datenbankausfall in 3.5: dort ist der
+**Empfänger** weg und kommt zurück, hier ist die **Nachricht** kaputt und bleibt es.
 
 ### 3.5 Fehlerfall: die Datenbank ist weg (S7)
 
