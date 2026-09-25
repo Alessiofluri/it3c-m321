@@ -2,7 +2,10 @@ package ch.benedict.m321.batchwriter.repository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +43,16 @@ public class MessageRepository {
             ON CONFLICT (id) DO NOTHING
             """;
 
+    /**
+     * Wie oft ein Stapel hoechstens geschrieben wird, bevor aufgegeben
+     * wird.
+     *
+     * 20 Versuche decken zusammen mit der Wartezeit (1 s, verdoppelnd,
+     * hoechstens 5 s) rund 90 Sekunden ab. Das ist an Szenario S7
+     * geeicht: Postgres ist dort 15 Sekunden weg.
+     */
+    private static final int MAX_WRITE_ATTEMPTS = 20;
+
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -50,8 +63,25 @@ public class MessageRepository {
      * den Stapel gegenueber RabbitMQ erst, wenn diese Methode ohne
      * Fehler zurueckkehrt.
      *
+     * @Retryable faengt den Fall ab, dass die Datenbank kurz weg ist.
+     * Wir warten und versuchen es erneut, statt den Stapel wegzuwerfen.
+     * Die Reihenfolge stimmt dabei: Spring legt die Wiederholung AUSSEN
+     * um die Transaktion, jeder Versuch bekommt also eine frische.
+     *
+     * Wichtig ist der Unterschied zu einer kaputten Nachricht: Dort ist
+     * die NACHRICHT das Problem und Wiederholen hilft nie. Hier ist der
+     * EMPFAENGER weg und kommt zurueck.
+     *
+     * Sind alle Versuche erschoepft, fliegt die Ausnahme weiter. Der
+     * Container bestaetigt den Stapel dann nicht, und RabbitMQ stellt
+     * ihn spaeter erneut zu. Auch dann geht nichts verloren.
+     *
      * @param rows die Zeilen des Stapels, nie leer
      */
+    @Retryable(
+            retryFor = DataAccessException.class,
+            maxAttempts = MAX_WRITE_ATTEMPTS,
+            backoff = @Backoff(delay = 1000, multiplier = 2, maxDelay = 5000))
     @Transactional
     public void insertBatch(List<MessageRow> rows) {
         List<Object[]> arguments = new ArrayList<>();

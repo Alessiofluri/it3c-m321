@@ -61,6 +61,21 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
+        <!-- Wiederholversuche beim Schreiben, wenn die Datenbank kurz
+             weg ist. Siehe Spezifikation 3.5. -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+
+        <!-- spring-retry legt seine Wiederholung als Aspekt um die
+             Methode. Ohne AspectJ auf dem Klassenpfad startet der
+             Kontext gar nicht erst. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <!-- Lombok erzeugt Logger und Konstruktoren beim Uebersetzen. -->
         <dependency>
             <groupId>org.projectlombok</groupId>
