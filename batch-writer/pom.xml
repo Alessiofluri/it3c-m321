@@ -41,6 +41,18 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Flyway legt die Tabelle beim Start an. Der Dienst, der
+             schreibt, bringt sein Schema mit. Bei zwei Instanzen sperrt
+             Flyway ueber flyway_schema_history, sodass nur eine migriert. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
         <!-- Lombok erzeugt Logger und Konstruktoren beim Uebersetzen. -->
         <dependency>
             <groupId>org.projectlombok</groupId>
