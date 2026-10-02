@@ -145,8 +145,9 @@ dass jemand etwas neu startet.
 - [x] Pflichtfelder prüfen; bei `null` oder ungültigem JSON
       `AmqpRejectAndDontRequeueException`, damit die Nachricht in `chat.dlq` landet
 
-**Test:** `InvalidMessageIntegrationTest` — kaputtes JSON in die Queue, erwartet: keine
-Zeile in `message`, eine Nachricht in `chat.dlq`, der Dienst läuft weiter.
+**Test:** `IncompleteMessageIntegrationTest` — eine Nachricht ohne `content` zusammen mit
+einer vollständigen in die Queue. Erwartet: die vollständige steht in `message`, die
+unvollständige liegt in `chat.dlq`, der Dienst läuft weiter.
 **Warum getrennt von Aufgabe 8:** Der Unterschied ist der Kern: Bei Aufgabe 8 ist der
 **Empfänger** kaputt und wir versuchen es erneut. Hier ist die **Nachricht** kaputt und
 Wiederholen hilft nie.

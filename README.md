@@ -24,12 +24,16 @@ Alle Aufgaben werden in **deinem Fork** gelöst. Das Original-Repository bleibt 
 ## Bauen, testen, starten
 
 ```bash
-mvn test                         # alle Tests, RabbitMQ kommt per Testcontainers
-docker compose up --build        # RabbitMQ und chat-service im Netz chat-net
+mvn test                         # alle Tests, RabbitMQ und PostgreSQL per Testcontainers
+docker compose up --build        # postgres, rabbitmq, chat-service, batch-writer im Netz chat-net
 ```
 
-Der `chat-service` veröffentlicht bewusst **keinen Port** auf den Host. Der einzige offene Port
-des Gesamtsystems gehört später dem Gateway.
+**Kein** Dienst veröffentlicht einen Port auf den Host. Der einzige offene Port des
+Gesamtsystems gehört später dem Gateway. Nachsehen lässt sich das so:
+
+```bash
+docker compose ps --format "{{.Service}}: {{.Publishers}}"
+```
 
 ## Was gebaut wird
 

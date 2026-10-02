@@ -34,8 +34,10 @@ public class MessageBatchListener {
 
     private final MessageRepository messageRepository;
 
-    /** Nur fuer den einen Fall gebraucht: eine unvollstaendige Nachricht
-     * aufs Abstellgleis legen. */
+    /**
+     * Nur fuer den einen Fall gebraucht: eine unvollstaendige Nachricht
+     * aufs Abstellgleis legen.
+     */
     private final RabbitTemplate rabbitTemplate;
 
     /**

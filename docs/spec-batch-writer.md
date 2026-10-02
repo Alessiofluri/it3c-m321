@@ -85,7 +85,7 @@ Spring AMQP setzt beim Senden automatisch:
 | `content_type` | `application/json` | **Das einzige, worauf wir uns verlassen.** |
 | `content_encoding` | `UTF-8` | |
 | `__TypeId__` | `ch.benedict.m321.chatservice.dto.ChatMessage` | **Wird bewusst ignoriert.** |
-| `delivery_mode` | `2` (persistent) | Die Nachricht überlebt einen Broker-Neustart. |
+| `delivery_mode` | `2` (persistent) | Die Nachricht überlebt einen Broker-Neustart. Nachgemessen am 02.10.2026: fünf Nachrichten lagen vor und nach `docker compose restart rabbitmq` unverändert in `chat.persist`. |
 
 **Die wichtigste Entscheidung des ganzen Vertrags:** Der `batch-writer` darf sich **nicht**
 auf `__TypeId__` verlassen.
@@ -341,11 +341,17 @@ docker compose exec -T chat-service sh -c '
 
 ### Tests, die diese Kriterien absichern
 
-| Test | Sichert ab | Art |
-|---|---|---|
-| `T-3` | A4 — Nachricht aus der Queue landet in der Tabelle | echte Queue + echte DB (Testcontainers) |
-| `T-5` | A7 — Duplikat, und zwar **ohne** `__TypeId__`-Header | echte Queue + echte DB |
-| `T-7` | A9 — Datenbank fällt aus, Schreibversuch wird wiederholt | gezielter Test des Wiederholverhaltens |
+| Test | Klasse | Sichert ab | Art |
+|---|---|---|---|
+| `T-3` | `MessageBatchListenerIntegrationTest` | A4 — Nachricht aus der Queue landet in der Tabelle | echte Queue + echte DB (Testcontainers) |
+| `T-5` | `DuplicateMessageIntegrationTest` | A7 — Duplikat, und zwar **ohne** `__TypeId__`-Header | echte Queue + echte DB |
+| `T-7` | `DatabaseOutageTest` | A9 — Datenbank fällt aus, Schreibversuch wird wiederholt | gezielter Test des Wiederholverhaltens |
+| `T-9` | `IncompleteMessageIntegrationTest` | 3.4 — unvollständige Nachricht geht in die DLQ, der Rest des Stapels wird geschrieben | echte Queue + echte DB |
+
+Dazu kommen vier Tests ohne eigene Kriteriumsnummer: `BatchWriterApplicationTests`
+(Kontext startet), `MessageSchemaTest` (Flyway legt Tabelle und Index an),
+`MessageRepositoryTest` (Stapel-INSERT und Duplikat auf Repository-Ebene) und
+`ChatMessageConversionTest` (JSON ohne `__TypeId__` wird umgewandelt).
 
 ---
 
