@@ -3,7 +3,10 @@ package ch.benedict.m321.chatservice.stream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,5 +93,23 @@ public class StreamRegistry {
             return Collections.emptySet();
         }
         return connections;
+    }
+
+    /**
+     * Alle offenen Streams dieser Instanz, über alle Räume.
+     *
+     * Gibt eine KOPIE zurück, anders als connectionsForRoom. Die beiden
+     * Aufrufer — der Ping und das Herunterfahren — tragen beim Durchlaufen
+     * Verbindungen aus: Der Ping, wenn ein Client tot ist, das
+     * Herunterfahren bei jeder. Über die lebende Menge zu laufen und sie
+     * dabei zu verändern wäre erlaubt, aber nicht mehr nachvollziehbar.
+     */
+    public List<StreamConnection> allConnections() {
+        List<StreamConnection> allConnections = new ArrayList<>();
+        Collection<Set<StreamConnection>> connectionsPerRoom = connectionsByRoom.values();
+        for (Set<StreamConnection> connections : connectionsPerRoom) {
+            allConnections.addAll(connections);
+        }
+        return allConnections;
     }
 }

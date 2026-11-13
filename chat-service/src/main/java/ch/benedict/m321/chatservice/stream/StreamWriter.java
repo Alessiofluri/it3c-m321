@@ -35,6 +35,15 @@ public class StreamWriter {
      */
     private static final long RECONNECT_DELAY_MS = 2000L;
 
+    /**
+     * Der Text des Ping-Kommentars.
+     *
+     * Ein SSE-Kommentar beginnt mit einem Doppelpunkt und hat kein `id:`.
+     * Er verändert deshalb die Last-Event-ID des Browsers nicht — ein Ping
+     * darf das Nachliefern nicht beeinflussen.
+     */
+    private static final String PING_COMMENT = "ping";
+
     private final ObjectMapper objectMapper;
 
     private final StreamRegistry streamRegistry;
@@ -81,6 +90,24 @@ public class StreamWriter {
         SseEmitter.SseEventBuilder event = SseEmitter.event()
                 .id(eventId)
                 .data(json, MediaType.TEXT_PLAIN);
+        sendEvent(connection, event);
+    }
+
+    /**
+     * Ein Lebenszeichen an einen Stream.
+     *
+     * Das ist der einzige Weg, auf dem der Dienst einen abgerissenen Client
+     * in einem stillen Raum bemerkt: Erst beim Schreiben wirft Tomcat
+     * (Spezifikation 3.7.6). Ohne den Ping blieben die Verbindungen eines
+     * Raums ohne Verkehr für immer im Register stehen.
+     *
+     * Nebenwirkung, auf die sich Kriterium L6 stützt: Der Client in Raum B
+     * bekommt kein `data:`, aber `:ping` — und das beweist, dass seine
+     * Verbindung die ganze Zeit offen war und nicht bloss stillschweigend
+     * abgerissen ist.
+     */
+    public void sendPing(StreamConnection connection) {
+        SseEmitter.SseEventBuilder event = SseEmitter.event().comment(PING_COMMENT);
         sendEvent(connection, event);
     }
 
