@@ -98,14 +98,22 @@ Verbindung bleibt offen.
 **Ein Stream, Zeile für Zeile:**
 
 ```
-retry: 2000
+retry:2000
 
-id: 3bf82e40-0d89-4e6a-a6ce-7cce4b0f1bb5
-data: {"id":"3bf82e40-0d89-4e6a-a6ce-7cce4b0f1bb5","roomId":"39acf48b-5d49-40f0-a5d6-cd5bfdb59385","senderId":"s1","senderName":"Test","content":"Hallo","sentAt":"2026-11-13T09:09:09.251491Z"}
+id:3bf82e40-0d89-4e6a-a6ce-7cce4b0f1bb5
+data:{"id":"3bf82e40-0d89-4e6a-a6ce-7cce4b0f1bb5","roomId":"39acf48b-5d49-40f0-a5d6-cd5bfdb59385","senderId":"s1","senderName":"Test","content":"Hallo","sentAt":"2026-11-13T09:09:09.251491Z"}
 
-: ping
+:ping
 
 ```
+
+**Kein Leerzeichen nach dem Doppelpunkt.** Das sind die echten Bytes, die Spring schreibt:
+In `SseEmitter$SseEventBuilderImpl` aus `spring-webmvc-6.2.19.jar` stehen die Literale `id:`,
+`event:`, `retry:` und `data:` ohne Leerzeichen, ein Kommentar wird als `:` direkt vor dem Text
+geschrieben (nachgeprüft am 13.11.2026). Nach dem SSE-Standard ist ein einzelnes Leerzeichen
+nach dem Doppelpunkt optional und wird vom Client verworfen — beide Formen sind gültig, und
+ich nehme die, die das Framework ohnehin liefert, statt den Writer von Hand nachzubauen.
+Die Messmuster in Abschnitt 5 sind deshalb mit `: ?` gegen beide Formen tolerant.
 
 | Element | Entscheidung |
 |---|---|
@@ -113,7 +121,7 @@ data: {"id":"3bf82e40-0d89-4e6a-a6ce-7cce4b0f1bb5","roomId":"39acf48b-5d49-40f0-
 | `data:` | Das JSON aus 2.2, **mit demselben `ObjectMapper` serialisiert** — live wie beim Nachliefern. Deshalb entsteht auf beiden Wegen dieselbe Zeichenkette; die Kürzung auf Mikrosekunden ist nur die Voraussetzung dafür. Immer einzeilig, weil Jackson Zeilenumbrüche im Text als `\n` maskiert. |
 | `event:` | Nein. Es gibt nur eine Ereignisart. Ohne `event:` landet alles in `onmessage` des Browsers. |
 | `retry:` | Einmal am Anfang, `2000`. Damit ist die Wartezeit fürs Neuverbinden in S7 festgelegt und hängt nicht vom Browser ab. |
-| `: ping` | Kommentar alle 15 Sekunden. Daran erkennt der Dienst tote Verbindungen (3.7.6). Ein Kommentar hat kein `id:` und ändert die `Last-Event-ID` nicht. |
+| `:ping` | Kommentar alle 15 Sekunden. Daran erkennt der Dienst tote Verbindungen (3.7.6). Ein Kommentar hat kein `id:` und ändert die `Last-Event-ID` nicht. |
 
 | Anfrage | Antwort |
 |---|---|
@@ -319,7 +327,7 @@ kleinerer Wert fast nichts, weil die Heartbeat-Frist dort der grössere Teil ist
 3. **Verbindung eintragen — vor jeder Datenbankabfrage** — und `registeredAt` merken. Mit Anker
    ist der Zustand `CATCHING_UP`, ohne Anker `LIVE`. Ab jetzt landet jede live eintreffende
    Nachricht des Raums in `pending` oder direkt im Stream.
-4. **`retry: 2000` senden.**
+4. **`retry:2000` senden.**
 5. **Ohne Anker: fertig.** Der Controller gibt den Emitter zurück.
 6. **Mit Anker: Nachlieferung einplanen.**
    - Laufen schon 200 Nachlieferungen (wartend oder aktiv): Emitter mit `complete()`
@@ -348,7 +356,7 @@ kleinerer Wert fast nichts, weil die Heartbeat-Frist dort der grössere Teil ist
 
 Daneben laufen:
 
-- **Ping:** Ein `@Scheduled`-Job schickt alle 15 s `: ping` an jede Verbindung.
+- **Ping:** Ein `@Scheduled`-Job schickt alle 15 s `:ping` an jede Verbindung.
 - **Herunterfahren:** Bei `ContextClosedEvent` alle Emitter mit `complete()` schliessen (3.3).
 
 #### 3.7.3 Die Abfrage
@@ -521,8 +529,12 @@ docker run --rm --network chat-net curlimages/curl:8.10.1 -sN --max-time 60 "htt
 Mit `Last-Event-ID`, hier an der anderen Instanz:
 
 ```bash
-LAST=$(grep '^id:' a1.txt | tail -1 | cut -d' ' -f2)
+LAST=$(grep '^id:' a1.txt | tail -1 | cut -d: -f2- | tr -d ' ')
 ```
+
+Getrennt wird am **Doppelpunkt**, nicht am Leerzeichen: Spring schreibt `id:<UUID>` ohne
+Leerzeichen (2.3), `cut -d' ' -f2` gäbe eine leere ID, und der Header ginge leer hinaus —
+still, ohne Fehlermeldung. `tr -d ' '` fängt zusätzlich die Form mit Leerzeichen ab.
 
 ```bash
 docker run --rm --network chat-net curlimages/curl:8.10.1 -sN --max-time 60 -H "Last-Event-ID: $LAST" "http://it3c-m321-chat-service-2:8080/stream?roomId=$ROOM_A" > a2.txt
@@ -590,9 +602,9 @@ docker compose exec -T rabbitmq rabbitmqctl -q list_bindings source_name destina
 | **L1** | Alle Tests grün | `mvn clean test` im Wurzelverzeichnis | `BUILD SUCCESS` |
 | **L2** | Kein Port veröffentlicht | `docker compose ps --format "{{.Service}}: {{.Publishers}}"` | bei keinem Dienst eine Host-Portnummer |
 | **L3** | Eine Queue pro Instanz, richtig konfiguriert | `--scale chat-service=2`, dann Queues und Bindungen | 2 × `chat.stream.*`, je `consumers = 1`, `durable = true`, Argumente `x-expires 10000`, `x-max-length 950`, `x-overflow drop-head`; 2 Bindungen an `chat.delivery` |
-| **L4** | SSE-Antwort korrekt | `curl -sN -D - --max-time 3 …/stream?roomId=$ROOM_A` | `Content-Type: text/event-stream`, erste Körperzeile `retry: 2000` |
+| **L4** | SSE-Antwort korrekt | `curl -sN -D - --max-time 3 …/stream?roomId=$ROOM_A` | `Content-Type: text/event-stream`, erste Körperzeile trifft `grep -E '^retry: ?2000'` |
 | **L5** | Fehlende oder ungültige `roomId` | `curl -s -o /dev/null -w '%{http_code}'` auf `…/stream` und `…?roomId=abc` | je `400` |
-| **L6** | Normalfall und S3 | `--scale chat-service=2`. Client A1 an Instanz 1 und Client A2 an Instanz 2, beide Raum A; Client B an Instanz 1, Raum B. 200 an Raum A über Instanz 1 (`TAG=eins`) **und** 200 über Instanz 2 (`TAG=zwei`) | `a1.txt` und `a2.txt`: je **400** IDs, 0 Duplikate, je Absender 0 Reihenfolgefehler, `diff` der ID-Listen = `0`. `b.txt`: `grep -c '^data:'` = `0` **und** `grep -c '^: ping'` > 0 — der Ping beweist, dass die Verbindung offen war |
+| **L6** | Normalfall und S3 | `--scale chat-service=2`. Client A1 an Instanz 1 und Client A2 an Instanz 2, beide Raum A; Client B an Instanz 1, Raum B. 200 an Raum A über Instanz 1 (`TAG=eins`) **und** 200 über Instanz 2 (`TAG=zwei`) | `a1.txt` und `a2.txt`: je **400** IDs, 0 Duplikate, je Absender 0 Reihenfolgefehler, `diff` der ID-Listen = `0`. `b.txt`: `grep -c '^data:'` = `0` **und** `grep -cE '^: ?ping'` > 0 — der Ping beweist, dass die Verbindung offen war |
 | **L7** | S4: Queue weg in ≤ 30 s | 2 Instanzen mit je einem Client, `docker compose up -d --scale chat-service=1`, danach jede Sekunde die Queues zählen, mit Zeitstempel. **Fünfmal.** | grösster Wert ≤ 30 s; der Client hat sich neu verbunden |
 | **L8** | S5: Anzeige ohne Datenbank | `docker compose stop postgres batch-writer`, **dann `docker compose restart chat-service`**, Client an, 100 senden, `docker compose start postgres batch-writer` | `chat-service` kommt hoch (`docker compose logs chat-service \| grep "Started ChatServiceApplication"`). Client: 100 IDs. Nach ≤ 60 s zeigt `SELECT count(*) FROM message` 100 mehr als vorher |
 | **L9** | S6: Grenze und Wiederanlauf | Client an Instanz 1; Queue von Instanz 1 über die Log-Meldung zuordnen; `docker compose pause` für Instanz 1; **mitlaufend** jede Sekunde `messages_ready + messages_unacknowledged` aller `chat.stream.*` in `s6.log`; 5000 an Instanz 2; `unpause`; 10 mit `TAG=nachher` | Höchstwert in `s6.log` ≤ 1000; die Queue von Instanz 1 existiert nach dem Fortsetzen noch; der Client hat innerhalb von 30 s alle 10 `nachher` |
