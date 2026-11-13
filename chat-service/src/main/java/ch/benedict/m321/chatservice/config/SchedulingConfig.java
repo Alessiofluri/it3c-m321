@@ -36,11 +36,41 @@ public class SchedulingConfig {
      */
     private static final int SCHEDULER_POOL_SIZE = 2;
 
+    /**
+     * Wie viele Nachlieferungen gleichzeitig laufen (Spezifikation 3.7.7).
+     *
+     * Vier, und nicht mehr: Jede Nachlieferung liest Seiten von 500 Zeilen
+     * aus der Datenbank. Der Hikari-Pool hat zehn Verbindungen, es bleibt
+     * also Luft für den uebrigen Betrieb. Mehr Threads wuerden vor allem
+     * die Datenbank beschaeftigen.
+     */
+    private static final int CATCH_UP_POOL_SIZE = 4;
+
     @Bean
     public ThreadPoolTaskScheduler taskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(SCHEDULER_POOL_SIZE);
         scheduler.setThreadNamePrefix("stream-ping-");
+        return scheduler;
+    }
+
+    /**
+     * Der Pool fuer das Nachliefern beim Neuverbinden.
+     *
+     * Bewusst ein ZWEITER Scheduler und nicht derselbe wie oben. Eine
+     * Nachlieferung kann Sekunden dauern — sie wartet auf den Anker und
+     * liest Seiten. Teilten sich Ping und Nachlieferung einen Pool, stuende
+     * der Ping hinter bis zu 200 wartenden Nachlieferungen, und abgerissene
+     * Clients in stillen Raeumen fielen minutenlang nicht auf.
+     *
+     * Der Name ist nicht "taskScheduler", damit @Scheduled weiterhin den
+     * anderen nimmt.
+     */
+    @Bean
+    public ThreadPoolTaskScheduler catchUpScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(CATCH_UP_POOL_SIZE);
+        scheduler.setThreadNamePrefix("stream-catchup-");
         return scheduler;
     }
 }

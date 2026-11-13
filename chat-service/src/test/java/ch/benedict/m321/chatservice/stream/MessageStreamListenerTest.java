@@ -1,9 +1,11 @@
 package ch.benedict.m321.chatservice.stream;
 
 import ch.benedict.m321.chatservice.dto.ChatMessage;
+import ch.benedict.m321.chatservice.repository.MessageHistoryRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -36,15 +38,24 @@ class MessageStreamListenerTest {
     private final StreamRegistry streamRegistry = new StreamRegistry();
 
     /**
-     * Echter StreamWriter, keine Attrappe.
+     * Echter StreamWriter und echtes StreamDelivery, keine Attrappen.
      *
-     * So läuft die Serialisierung und das Aufräumen toter Verbindungen in
-     * diesem Test mit. Geprüft wird trotzdem nur die Entscheidung des
-     * Listeners: wurde in diesen Stream geschrieben oder nicht.
+     * So laufen Serialisierung, Zustandsprüfung und das Aufräumen toter
+     * Verbindungen in diesem Test mit. Geprüft wird trotzdem nur die
+     * Entscheidung des Listeners: wurde in diesen Stream geschrieben oder
+     * nicht.
+     *
+     * Das Repository ist eine Attrappe und wird nie gebraucht — alle
+     * Verbindungen hier sind LIVE, es wird nichts nachgeliefert.
      */
     private final StreamWriter streamWriter = new StreamWriter(objectMapperWithInstantSupport(), streamRegistry);
 
-    private final MessageStreamListener listener = new MessageStreamListener(streamRegistry, streamWriter);
+    private final StreamDelivery streamDelivery = new StreamDelivery(
+            streamWriter,
+            mock(MessageHistoryRepository.class),
+            idleScheduler());
+
+    private final MessageStreamListener listener = new MessageStreamListener(streamRegistry, streamDelivery);
 
     /**
      * Der Kern von Szenario S3: Der Client in Raum B bekommt nichts.
@@ -147,6 +158,14 @@ class MessageStreamListenerTest {
      * läuft kein Spring, also muss es von Hand dazu — ohne das Modul
      * scheitert die Serialisierung am Feld sentAt.
      */
+    /** Wird in diesem Test nie benutzt, nur fuer den Konstruktor gebraucht. */
+    private static ThreadPoolTaskScheduler idleScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.initialize();
+        return scheduler;
+    }
+
     private static ObjectMapper objectMapperWithInstantSupport() {
         ObjectMapper objectMapper = new ObjectMapper();
         JavaTimeModule javaTimeModule = new JavaTimeModule();

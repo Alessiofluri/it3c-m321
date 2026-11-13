@@ -105,12 +105,6 @@ class StreamPingTest {
      * ginge.
      */
     private String textOf(SseEmitter.SseEventBuilder event) {
-        Set<ResponseBodyEmitter.DataWithMediaType> parts = event.build();
-        StringBuilder text = new StringBuilder();
-        for (ResponseBodyEmitter.DataWithMediaType part : parts) {
-            Object data = part.getData();
-            text.append(data);
-        }
-        return text.toString();
+        return StreamTestSupport.textOf(event);
     }
 }

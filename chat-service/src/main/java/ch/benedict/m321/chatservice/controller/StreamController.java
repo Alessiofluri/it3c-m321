@@ -1,7 +1,9 @@
 package ch.benedict.m321.chatservice.controller;
 
 import ch.benedict.m321.chatservice.stream.StreamConnection;
+import ch.benedict.m321.chatservice.stream.StreamDelivery;
 import ch.benedict.m321.chatservice.stream.StreamRegistry;
+import ch.benedict.m321.chatservice.stream.StreamState;
 import ch.benedict.m321.chatservice.stream.StreamWriter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -42,6 +45,8 @@ public class StreamController {
 
     private final StreamWriter streamWriter;
 
+    private final StreamDelivery streamDelivery;
+
     /**
      * Öffnet einen Stream für einen Raum.
      *
@@ -69,20 +74,36 @@ public class StreamController {
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache");
 
         UUID anchorId = readAnchorId(lastEventId);
+        StreamState initialState = stateFor(anchorId);
         SseEmitter emitter = new SseEmitter(NO_TIMEOUT);
-        StreamConnection connection = new StreamConnection(emitter, roomId);
+        Instant registeredAt = Instant.now();
+        StreamConnection connection = new StreamConnection(emitter, roomId, registeredAt, initialState);
         registerCallbacks(connection);
         streamRegistry.register(connection);
         streamWriter.sendReconnectDelay(connection);
 
         if (anchorId == null) {
             log.info("Stream opened for room {} without an anchor", roomId);
-        } else {
-            // Der Anker wird gelesen und geprüft, aber noch nicht benutzt:
-            // Das Nachliefern baut Schritt 7.
-            log.info("Stream opened for room {} with anchor {}", roomId, anchorId);
+            return emitter;
         }
+        log.info("Stream opened for room {} with anchor {}", roomId, anchorId);
+        streamDelivery.scheduleCatchUp(connection, anchorId);
         return emitter;
+    }
+
+    /**
+     * Mit Anker wird nachgeliefert, ohne Anker nicht.
+     *
+     * Der Zustand steht fest, BEVOR die Verbindung ins Register kommt.
+     * Andernfalls gäbe es einen Augenblick, in dem eine live eintreffende
+     * Nachricht eine Verbindung sieht, die noch als LIVE gilt, obwohl die
+     * Nachlieferung gleich beginnt — und sie ginge vor den älteren hinaus.
+     */
+    private StreamState stateFor(UUID anchorId) {
+        if (anchorId == null) {
+            return StreamState.LIVE;
+        }
+        return StreamState.CATCHING_UP;
     }
 
     /**

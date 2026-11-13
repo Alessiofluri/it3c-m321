@@ -26,7 +26,7 @@ public class MessageStreamListener {
 
     private final StreamRegistry streamRegistry;
 
-    private final StreamWriter streamWriter;
+    private final StreamDelivery streamDelivery;
 
     /**
      * Eine Nachricht aus der eigenen Stream-Queue.
@@ -60,7 +60,9 @@ public class MessageStreamListener {
             return;
         }
         for (StreamConnection connection : connections) {
-            streamWriter.sendMessage(connection, message);
+            // Ob sofort gesendet oder zwischengespeichert wird, entscheidet
+            // der Zustand der Verbindung — nicht der Listener.
+            streamDelivery.deliverLive(connection, message);
         }
     }
 }
