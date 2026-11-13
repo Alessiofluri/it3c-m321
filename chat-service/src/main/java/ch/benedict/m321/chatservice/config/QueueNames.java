@@ -15,6 +15,17 @@ public final class QueueNames {
     /** Zustellweg: fanout an alle web-gateway-Instanzen. */
     public static final String DELIVERY_EXCHANGE = "chat.delivery";
 
+    /**
+     * Zustellweg, Verbraucherseite: Praefix der Queue, die sich jede
+     * chat-service-Instanz fuer ihre eigenen SSE-Streams anlegt.
+     *
+     * Hier steht nur das Praefix, weil der vollstaendige Name erst zur
+     * Laufzeit entsteht — jede Instanz haengt eine eigene UUID an. Das
+     * Praefix macht die Queues zaehlbar: "list_queues | grep chat.stream"
+     * findet alle, egal wie viele Instanzen laufen.
+     */
+    public static final String STREAM_QUEUE_PREFIX = "chat.stream.";
+
     /** Dead Letter: was der batch-writer endgültig nicht verarbeiten kann. */
     public static final String DEAD_LETTER_QUEUE = "chat.dlq";
 
