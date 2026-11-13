@@ -39,7 +39,7 @@ docker compose ps --format "{{.Service}}: {{.Publishers}}"
 
 | Baustein | Technologie | Aufgabe | Stand |
 |---|---|---|---|
-| chat-service | Spring Boot 3, Java 21 | Nimmt Nachrichten per `POST /messages` an, legt sie auf Queue und Fanout-Exchange | vorhanden |
+| chat-service | Spring Boot 3, Java 21 | Nimmt Nachrichten per `POST /messages` an, legt sie auf Queue und Fanout-Exchange, und stellt sie per Server-Sent Events über `GET /stream?roomId=…` zu | vorhanden |
 | rabbitmq | RabbitMQ 3.13 | Message Queue zwischen den Services | vorhanden |
 | batch-writer | Spring Boot 3, Java 21 | Einziger Schreiber in die Datenbank | vorhanden |
 | postgres | PostgreSQL 16 | Speichert den Chat-Verlauf | vorhanden |
@@ -49,6 +49,13 @@ docker compose ps --format "{{.Service}}: {{.Publishers}}"
 
 Alles unterhalb des Gateways läuft in einem internen Docker-Netzwerk und ist von aussen nicht
 erreichbar.
+
+**Abweichung von `PLANUNG.md`:** Dort konsumiert das `web-gateway` den Fanout und stellt per
+WebSocket zu. Seit Bewertung 2 übernimmt das der `chat-service` selbst, mit Server-Sent Events
+und einer eigenen Queue je Instanz. Vertrag, Verhalten und Abnahmekriterien stehen in
+[`docs/spec-live-zustellung.md`](docs/spec-live-zustellung.md), der Bauweg in
+[`docs/plan-live-zustellung.md`](docs/plan-live-zustellung.md). Das Gateway muss später nur noch
+`Last-Event-ID` durchreichen und darf den Stream nicht puffern.
 
 ## Dokumente
 
