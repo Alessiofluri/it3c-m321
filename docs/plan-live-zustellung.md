@@ -476,4 +476,36 @@ Commit korrigiert, nicht stillschweigend.
 
 **Test:** Die Tabelle selbst.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** Die Tabelle in Abschnitt 5 wurde am 13.11.2026 zwischen 19:00
+und 21:00 gefüllt (Commit `0ee63f3`). Gegen 21:45 habe ich die Kriterien, die sich ohne
+Umbau wiederholen lassen, ein zweites Mal selbst ausgeführt, mit zwei Instanzen:
+
+| Nr | Zweiter Lauf | Gleich wie in der Tabelle? |
+|---|---|---|
+| L1 | `mvn clean test`: `BUILD SUCCESS`, 53 + 11 = 64 Tests, 0 Fehler | ja |
+| L2 | 11 × `PublishedPort: 0` | ja |
+| L3 | 2 Queues, je `true` / `1` / drei Argumente, 2 Bindungen an `chat.delivery` | ja |
+| L6 | `a1` und `a2` je 400 IDs, 0 Duplikate, je Absender 200 Nachrichten und 0 Reihenfolgefehler, `diff` 0; Raum B 0 × `data:`, 5 × `:ping` | ja (vorher 4 Pings, hängt nur von der Laufzeit ab) |
+| L7 | 12, 13, 11, 13, 13 s | ja, alle ≤ 30 s |
+| L11 | 0 Treffer | ja |
+| L12 | kleiner Raum (300 Zeilen): `Bitmap Index Scan on idx_message_room_sent_at`, 0,283 ms | ja |
+| L13 | 0 Treffer | ja |
+| L14 | beide `chat-service` 300, `batch-writer` 60 | ja |
+
+Nicht wiederholt, die Werte in der Tabelle stammen aus dem ersten Lauf: L4, L5, L8, L9, L10
+und L12 für den grossen Raum.
+
+Zwei Schwächen der Befehle, die das Ergebnis nicht ändern:
+- **L6, `diff`:** Im `curl`-Container läuft BusyBox-`sh`, und die Fehlermeldung von `diff`
+  landet nicht in `wc -l`. Die `0` allein beweist also wenig. Die anderen Zahlen tragen den
+  Schluss trotzdem: Beide Clients haben je 400 verschiedene IDs und alle 400 Inhalte gesehen.
+  **Neu gemessen** ohne Prozess-Substitution: `diff` Exit-Code 0, keine Fehlerausgabe, und
+  `comm` zeigt 400 gemeinsame IDs, 0 nur in `a1`, 0 nur in `a2` (Spezifikation Abschnitt 5).
+- **L7:** Zwischen zwei Zählungen steht kein `sleep`. Der Takt ist also so lang, wie ein
+  `rabbitmqctl`-Aufruf dauert (etwa eine Sekunde). Die Neuverbindung des Clients wurde in
+  diesem Lauf nicht geprüft, weil seine Ausgabe verworfen wird.
+
+Die vielen `ERROR`-Zeilen im Log von L1 sind kein Fehler. Sie kommen aus den Testkontexten,
+die Spring zwischen den Testklassen zwischenspeichert. Diese Kontexte versuchen weiter, ihren
+inzwischen gestoppten Testcontainers-Broker zu erreichen. „auto-delete queue(s)“ ist dabei
+nur Springs allgemeiner Meldungstext. Korrigiert wurde nichts.
