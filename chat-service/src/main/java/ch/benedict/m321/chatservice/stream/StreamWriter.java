@@ -112,6 +112,30 @@ public class StreamWriter {
     }
 
     /**
+     * Beendet einen Stream von sich aus, weil eine Grenze erreicht ist.
+     *
+     * complete() und nicht completeWithError(): Für den Browser soll das
+     * wie ein normales Ende aussehen, damit er sich nach den 2000 ms aus
+     * dem `retry:` wieder meldet — und zwar ab der letzten ID, die er
+     * WIRKLICH bekommen hat. Genau das ist bei einer überlaufenden
+     * Warteschlange die Rettung: Die Nachlieferung beginnt dort neu, wo der
+     * Client stehen geblieben ist (Spezifikation 3.7.7).
+     *
+     * WARN und nicht DEBUG: Im Normalbetrieb darf das nicht vorkommen.
+     */
+    public void closeStream(StreamConnection connection, String reason) {
+        UUID roomId = connection.roomId();
+        log.warn("Closing stream for room {}: {}", roomId, reason);
+        streamRegistry.unregister(connection);
+        SseEmitter emitter = connection.emitter();
+        try {
+            emitter.complete();
+        } catch (Exception alreadyGone) {
+            log.debug("Emitter for room {} was already closed: {}", roomId, alreadyGone.getMessage());
+        }
+    }
+
+    /**
      * Schreibt ein fertiges Ereignis und fängt dabei jeden Fehler.
      *
      * Gefangen wird absichtlich jede Ausnahme und nicht nur die

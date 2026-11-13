@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Der Zustandsautomat einer Verbindung: Nachliefern, dann live
@@ -49,11 +50,47 @@ public class StreamDelivery {
 
     private static final long ANCHOR_RETRY_PAUSE_MS = 500L;
 
+    /**
+     * Wie viele Nachrichten eine Verbindung höchstens zwischenspeichert
+     * (Spezifikation 3.7.7).
+     *
+     * Die Grenze ist nötig, weil `pending` im Hauptspeicher dieser Instanz
+     * liegt. Ohne sie könnte ein einziger Raum mit viel Verkehr während
+     * einer langen Nachlieferung den Speicher füllen.
+     *
+     * Beim Erreichen wird der Stream geschlossen und nicht etwa die
+     * Nachricht verworfen: Der Browser verbindet sich ab seiner letzten
+     * wirklich erhaltenen ID neu, und die Nachlieferung beginnt dort. Würde
+     * stattdessen verworfen, fehlte dem Client die Nachricht für immer, ohne
+     * dass es jemand merkt.
+     */
+    private static final int MAX_PENDING = 1000;
+
+    /**
+     * Wie viele Nachlieferungen gleichzeitig laufen oder warten dürfen.
+     *
+     * Vier Threads arbeiten sie ab (SchedulingConfig). 200 ist die Länge
+     * der Warteschlange davor; darüber wird abgewiesen, statt eine immer
+     * längere Schlange aufzubauen, in der niemand mehr rechtzeitig
+     * drankommt.
+     */
+    private static final int MAX_CONCURRENT_CATCH_UPS = 200;
+
     private final StreamWriter streamWriter;
 
     private final MessageHistoryRepository messageHistoryRepository;
 
     private final TaskScheduler catchUpScheduler;
+
+    /**
+     * Wie viele Nachlieferungen gerade laufen oder in der Warteschlange
+     * stehen.
+     *
+     * AtomicInteger und nicht int: Hochgezaehlt wird im Request-Thread,
+     * heruntergezaehlt im Scheduler-Thread. Mit einem gewoehnlichen int
+     * koennten zwei gleichzeitige Verbindungen denselben Platz belegen.
+     */
+    private final AtomicInteger runningCatchUps = new AtomicInteger();
 
     /**
      * Der Scheduler kommt per Qualifier herein.
@@ -82,12 +119,24 @@ public class StreamDelivery {
      * gerade geleert wurde.
      */
     public void deliverLive(StreamConnection connection, ChatMessage message) {
+        boolean bufferIsFull = false;
         synchronized (connection.lock()) {
             if (connection.isLive()) {
                 streamWriter.sendMessage(connection, message);
                 return;
             }
-            connection.addPending(message);
+            int buffered = connection.pendingCount();
+            if (buffered >= MAX_PENDING) {
+                bufferIsFull = true;
+            } else {
+                connection.addPending(message);
+            }
+        }
+        if (bufferIsFull) {
+            // Ausserhalb der Sperre, weil complete() die Callbacks des
+            // Controllers auslöst und die ihrerseits ins Register greifen.
+            String reason = "buffer full during catch-up (" + MAX_PENDING + " messages)";
+            streamWriter.closeStream(connection, reason);
         }
     }
 
@@ -99,9 +148,44 @@ public class StreamDelivery {
      * kann geschrieben werden.
      */
     public void scheduleCatchUp(StreamConnection connection, UUID anchorId) {
+        int running = runningCatchUps.incrementAndGet();
+        if (running > MAX_CONCURRENT_CATCH_UPS) {
+            runningCatchUps.decrementAndGet();
+            String reason = "too many catch-ups running (" + MAX_CONCURRENT_CATCH_UPS + ")";
+            streamWriter.closeStream(connection, reason);
+            return;
+        }
         Instant startAt = Instant.now().plus(CATCH_UP_DELAY);
-        Runnable task = () -> catchUp(connection, anchorId);
-        catchUpScheduler.schedule(task, startAt);
+        Runnable task = () -> runCountedCatchUp(connection, anchorId);
+        try {
+            catchUpScheduler.schedule(task, startAt);
+        } catch (Exception notScheduled) {
+            // Beim Herunterfahren nimmt der Pool keine Aufgaben mehr an.
+            // Ohne diesen Zweig bliebe der Zaehler oben haengen.
+            runningCatchUps.decrementAndGet();
+            String reason = "catch-up could not be scheduled: " + notScheduled.getMessage();
+            streamWriter.closeStream(connection, reason);
+        }
+    }
+
+    /**
+     * Fuehrt die Nachlieferung aus und gibt den Platz danach wieder frei.
+     *
+     * Der Zaehler MUSS im finally sinken. Sonst waeren nach 200
+     * gescheiterten Nachlieferungen alle Plaetze dauerhaft belegt, und kein
+     * Client koennte mehr nachliefern.
+     */
+    private void runCountedCatchUp(StreamConnection connection, UUID anchorId) {
+        try {
+            catchUp(connection, anchorId);
+        } finally {
+            runningCatchUps.decrementAndGet();
+        }
+    }
+
+    /** Wie viele Nachlieferungen gerade laufen oder warten. */
+    public int runningCatchUps() {
+        return runningCatchUps.get();
     }
 
     /**
