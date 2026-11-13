@@ -1,6 +1,8 @@
 package ch.benedict.m321.chatservice.stream;
 
 import ch.benedict.m321.chatservice.dto.ChatMessage;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -33,7 +35,16 @@ class MessageStreamListenerTest {
 
     private final StreamRegistry streamRegistry = new StreamRegistry();
 
-    private final MessageStreamListener listener = new MessageStreamListener(streamRegistry);
+    /**
+     * Echter StreamWriter, keine Attrappe.
+     *
+     * So läuft die Serialisierung und das Aufräumen toter Verbindungen in
+     * diesem Test mit. Geprüft wird trotzdem nur die Entscheidung des
+     * Listeners: wurde in diesen Stream geschrieben oder nicht.
+     */
+    private final StreamWriter streamWriter = new StreamWriter(objectMapperWithInstantSupport(), streamRegistry);
+
+    private final MessageStreamListener listener = new MessageStreamListener(streamRegistry, streamWriter);
 
     /**
      * Der Kern von Szenario S3: Der Client in Raum B bekommt nichts.
@@ -56,7 +67,7 @@ class MessageStreamListenerTest {
 
         listener.receive(message);
 
-        verify(emitterA).send(message);
+        verify(emitterA).send(any(SseEmitter.SseEventBuilder.class));
         verifyNoInteractions(emitterB);
     }
 
@@ -74,8 +85,8 @@ class MessageStreamListenerTest {
 
         listener.receive(message);
 
-        verify(firstEmitter).send(message);
-        verify(secondEmitter).send(message);
+        verify(firstEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        verify(secondEmitter).send(any(SseEmitter.SseEventBuilder.class));
     }
 
     /**
@@ -98,9 +109,9 @@ class MessageStreamListenerTest {
      * Ein abgerissener Client darf den Listener nicht umbringen.
      *
      * Tomcat wirft beim Schreiben in eine geschlossene Verbindung eine
-     * IOException. Käme die bis zum Container durch, gäbe es kein ACK, der
-     * Stapel käme zurück, und alle anderen Clients desselben Raums bekämen
-     * die Nachricht ein zweites Mal.
+     * IOException. Käme die bis zum Container durch, gäbe es kein ACK, die
+     * Nachricht käme zurück, und alle anderen Clients desselben Raums
+     * bekämen sie ein zweites Mal.
      *
      * Geprüft wird beides: dass nichts nach oben durchkommt, und dass die
      * tote Verbindung aus dem Register verschwindet — sonst scheiterte jede
@@ -111,7 +122,7 @@ class MessageStreamListenerTest {
         UUID roomA = UUID.randomUUID();
         SseEmitter deadEmitter = mock(SseEmitter.class);
         IOException clientGone = new IOException("client aborted");
-        doThrow(clientGone).when(deadEmitter).send(any(Object.class));
+        doThrow(clientGone).when(deadEmitter).send(any(SseEmitter.SseEventBuilder.class));
         StreamConnection connection = new StreamConnection(deadEmitter, roomA);
         streamRegistry.register(connection);
         ChatMessage message = messageForRoom(roomA);
@@ -127,5 +138,19 @@ class MessageStreamListenerTest {
         UUID messageId = UUID.randomUUID();
         Instant sentAt = Instant.now();
         return new ChatMessage(messageId, roomId, "s1", "Test", "Hallo", sentAt);
+    }
+
+    /**
+     * Ein ObjectMapper, der Instant schreiben kann.
+     *
+     * Im Betrieb kommt er von Spring Boot und hat das Modul schon. Hier
+     * läuft kein Spring, also muss es von Hand dazu — ohne das Modul
+     * scheitert die Serialisierung am Feld sentAt.
+     */
+    private static ObjectMapper objectMapperWithInstantSupport() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        JavaTimeModule javaTimeModule = new JavaTimeModule();
+        objectMapper.registerModule(javaTimeModule);
+        return objectMapper;
     }
 }
