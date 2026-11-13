@@ -707,14 +707,32 @@ einem Limit von 30 s ohne Bedeutung.
 
 ### Tests, die diese Kriterien absichern
 
-| Test | Sichert ab | Art |
-|---|---|---|
-| `MessageServiceTest.truncatesTimestampToMicroseconds` | 2.2 — `sentAt` höchstens Mikrosekunden | Unit, **vorhanden** |
-| Queue-Deklaration | L3 — Name, `durable`, Argumente | echter Broker (Testcontainers) |
-| Filter nach Raum | L6 — Raum B bekommt nichts | Unit |
-| SSE-Format | 2.3 — `retry:`, `id:`, `data:` einzeilig | Integration |
-| Nachliefern ohne Duplikat | 3.7.5 — Überschneidung von `pending` und Datenbank | Integration mit echter DB |
-| `pending` am Limit | 3.7.2 Schritt 12 — Emitter wird geschlossen | Unit |
+Stand nach der Abnahme, mit den Klassennamen, die wirklich entstanden sind:
+
+| Testklasse im `chat-service` | Tests | Sichert ab | Art |
+|---|---|---|---|
+| `service.MessageServiceTest` | 4 | 2.2 — `sentAt` höchstens Mikrosekunden | Unit |
+| `config.StreamQueueIntegrationTest` | 6 | L3 — Präfix, `durable`, die drei Argumente, Bindung, gleicher Name nach Neuverbindung | echter Broker (Testcontainers) |
+| `stream.MessageStreamListenerTest` | 4 | 3.1 — Raumfilter, Raum B bekommt nichts, Listener wirft nie | Unit |
+| `controller.StreamControllerIntegrationTest` | 7 | 2.3 — `retry:`, `id:`, einzeiliges `data:`, Kopfzeilen, keine `Content-Length`; dazu L4 und L5 | Integration, MockMvc |
+| `stream.StreamPingTest` | 4 | 3.7.6 — `:ping` ohne `id:`, tote Verbindung wird ausgetragen | Unit |
+| `stream.StreamShutdownTest` | 3 | 3.3 — beim `ContextClosedEvent` werden alle Emitter geschlossen | Unit |
+| `repository.MessageHistoryRepositoryIntegrationTest` | 5 | 3.7.3 — Anker mit Raum, Keyset über 1200 Zeilen, Gleichstand bei `sent_at`, Rückweg verändert die Nachricht nicht | echte Postgres (Testcontainers) |
+| `stream.StreamDeliveryTest` | 7 | 3.7.2 und 3.7.5 — Überschneidung von `pending` und Datenbank, Reihenfolge, Anker fehlt, Datenbank weg, Blättern | Unit, Repository als Attrappe |
+| `stream.StreamLimitsTest` | 2 | 3.7.7 — die 1001. Nachricht schliesst den Stream, die 201. Nachlieferung wird abgewiesen | Unit |
+| `ChatServiceApplicationTest` | 1 | 3.4 — Kontext startet ohne Broker **und** ohne Datenbank | Integration |
+
+Unverändert aus Bewertung 1, zusammen 10 Tests: `config.RabbitConfigIntegrationTest` (2),
+`controller.MessageControllerIntegrationTest` (2), `controller.MessageExceptionHandlerTest` (1),
+`dto.SendMessageRequestTest` (3), `service.MessagePublisherIntegrationTest` (2). Summe im
+`chat-service`: **53**, dazu 11 im `batch-writer` (L1).
+
+**Korrektur gegenüber der ersten Fassung dieser Tabelle:** Dort stand „Nachliefern ohne
+Duplikat" als „Integration mit echter DB". Das ist nicht so gebaut worden. Die Überschneidung
+von `pending` und Datenbank prüft `StreamDeliveryTest` als **Unit**-Test mit einer Attrappe des
+Repositories — nur so lässt sich der Augenblick herstellen, in dem eine Nachricht live
+eintrifft, während die Nachlieferung läuft. Gegen eine echte Datenbank läuft stattdessen die
+**Abfrage** (`MessageHistoryRepositoryIntegrationTest`), und dort gehört sie auch hin.
 
 ---
 
