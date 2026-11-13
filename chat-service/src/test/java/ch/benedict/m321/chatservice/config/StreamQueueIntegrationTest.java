@@ -2,9 +2,7 @@ package ch.benedict.m321.chatservice.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
@@ -36,6 +34,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Gelesen wird über die Management-Schnittstelle, weil nur sie "durable",
  * "exclusive", "auto_delete" und die Argumente zurückgibt. RabbitAdmin
  * liefert bloss Name, Nachrichten- und Verbraucherzahl.
+ *
+ * Der Test legt nichts selbst an. In Schritt 1 musste er das noch, weil
+ * x-expires die Queue nach zehn Sekunden ohne Verbraucher löscht. Seit
+ * Schritt 2 hält der Listener einen Consumer offen: Die Queue entsteht beim
+ * Hochfahren und bleibt, solange der Kontext läuft. Dass der Test ohne
+ * Selbst-Anlegen grün ist, beweist deshalb zusätzlich, dass die ANWENDUNG
+ * die Queue deklariert — nicht der Test.
  */
 @SpringBootTest
 @Testcontainers
@@ -56,9 +61,6 @@ class StreamQueueIntegrationTest {
     private Queue liveQueue;
 
     @Autowired
-    private Binding liveQueueBinding;
-
-    @Autowired
     private RabbitAdmin rabbitAdmin;
 
     @Autowired
@@ -66,24 +68,6 @@ class StreamQueueIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
-
-    /**
-     * Legt Queue und Bindung vor jeder Prüfung erneut an.
-     *
-     * Nötig wegen x-expires: Die Queue verschwindet nach 10 Sekunden ohne
-     * Verbraucher, und in diesem Schritt gibt es noch keinen — der Listener
-     * kommt erst in Schritt 2. Ohne diese Zeile wäre der Test von seiner
-     * eigenen Laufzeit abhängig und würde sporadisch fehlschlagen.
-     *
-     * Dass das Anlegen mit unveränderten Argumenten wiederholbar ist, prüft
-     * diese Methode gleich mit: Wäre ein Argument anders als beim ersten Mal,
-     * scheiterte sie mit PRECONDITION_FAILED.
-     */
-    @BeforeEach
-    void declareAgain() {
-        rabbitAdmin.declareQueue(liveQueue);
-        rabbitAdmin.declareBinding(liveQueueBinding);
-    }
 
     /** Das Präfix macht die Queues in der Abnahme zählbar (L3). */
     @Test

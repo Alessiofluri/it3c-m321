@@ -7,6 +7,8 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.FanoutExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -49,6 +51,33 @@ public class RabbitConfig {
      * Ab Schritt 9 kommt der Wert aus der Umgebung.
      */
     private static final int STREAM_QUEUE_MAX_LENGTH = 950;
+
+    /**
+     * Wie viele unbestaetigte Nachrichten der Broker dem Listener
+     * gleichzeitig ueberlaesst.
+     *
+     * Zusammen mit x-max-length 950 ergibt das die Grenze von 1000 aus
+     * Szenario S6, denn x-max-length zaehlt die 50 hier liegenden nicht mit.
+     *
+     * Anders als im batch-writer ist der Wert NICHT aus einer Stapelgroesse
+     * abgeleitet — hier wird einzeln zugestellt. 50 ist ein Puffer, der die
+     * Leitung beschaeftigt haelt, ohne dass bei einem Abbruch viel erneut
+     * zugestellt werden muss.
+     *
+     * Ab Schritt 9 kommt der Wert aus der Umgebung.
+     */
+    private static final int STREAM_PREFETCH = 50;
+
+    /**
+     * Wie viele Consumer gleichzeitig aus der Stream-Queue lesen: genau
+     * einer.
+     *
+     * Mehr waeren schneller, wuerden aber die Reihenfolge brechen. Zwei
+     * Threads, die aus derselben Queue lesen, kommen in beliebiger
+     * Reihenfolge beim Emitter an — und Szenario S3 prueft genau, dass die
+     * Nachrichten eines Absenders in seiner Reihenfolge ankommen.
+     */
+    private static final int STREAM_CONCURRENCY = 1;
 
     /**
      * Der Schreibweg. "durable" heisst: die Queue überlebt einen Neustart
@@ -150,5 +179,33 @@ public class RabbitConfig {
     @Bean
     public MessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
+    }
+
+    /**
+     * Die Factory fuer den Listener auf der Stream-Queue.
+     *
+     * Eigene Factory und nicht die vorgegebene, weil hier zwei Werte
+     * abweichen muessen: Prefetch 50 (Teil der Grenze aus S6) und genau ein
+     * Consumer (Reihenfolge aus S3). Die vorgegebene Factory von Spring Boot
+     * bleibt unberuehrt — sie wird im chat-service von niemandem benutzt,
+     * aber eine stillschweigende Aenderung an ihr wuerde jeden spaeteren
+     * Listener mitbetreffen.
+     *
+     * Derselbe Konverter wie beim Senden: So entsteht aus dem JSON wieder
+     * genau der Record, den der Publisher hineingeschrieben hat.
+     */
+    @Bean
+    public SimpleRabbitListenerContainerFactory streamListenerFactory(
+            ConnectionFactory connectionFactory,
+            MessageConverter messageConverter) {
+
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setMessageConverter(messageConverter);
+        factory.setPrefetchCount(STREAM_PREFETCH);
+        factory.setConcurrentConsumers(STREAM_CONCURRENCY);
+        factory.setMaxConcurrentConsumers(STREAM_CONCURRENCY);
+
+        return factory;
     }
 }
