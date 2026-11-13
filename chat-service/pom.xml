@@ -33,6 +33,25 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Lesezugriff auf die Tabelle message fuer das Nachliefern beim
+             Neuverbinden. JdbcTemplate, kein JPA - wie im batch-writer.
+             Dieser Dienst liest nur; geschrieben wird ausschliesslich vom
+             batch-writer. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- KEIN Flyway. Das Schema gehoert dem batch-writer; zwei Dienste,
+             die dieselbe Tabelle migrieren, waeren ein Wettlauf. -->
+
+
         <!-- Lombok erzeugt Logger und Konstruktoren beim Uebersetzen.
              "optional" heisst: nur wir brauchen es, niemand der uns benutzt. -->
         <dependency>
@@ -61,6 +80,15 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>rabbitmq</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Echte Postgres im Container fuer die Nachliefer-Abfrage.
+             Keyset-Paginierung und der Gleichstand bei sent_at lassen sich
+             nur gegen eine echte Datenbank pruefen. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -44,6 +44,15 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Nur zum LESEN, fuer das Nachliefern beim Neuverbinden.
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # Absichtlich NUR rabbitmq, nicht postgres. Der Anzeigeweg braucht die
+    # Datenbank nie, und Szenario S5 verlangt, dass dieser Dienst auch
+    # hochfaehrt, wenn Postgres unten ist. Mit einem depends_on auf
+    # postgres: service_healthy wuerde Docker ihn gar nicht erst starten.
     depends_on:
       rabbitmq:
         condition: service_healthy

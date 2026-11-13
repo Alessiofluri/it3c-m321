@@ -9,6 +9,25 @@ spring:
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
 
+  datasource:
+    # Dieselbe Regel wie beim Broker: im Netz "postgres", sonst "localhost".
+    # Dieser Dienst LIEST nur. Geschrieben wird ausschliesslich vom
+    # batch-writer, und das Schema gehoert ihm auch.
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:chat}
+    username: ${POSTGRES_USER:chat}
+    password: ${POSTGRES_PASSWORD:chat}
+    hikari:
+      # Der wichtigste Wert in dieser Datei. HikariCP steht standardmaessig
+      # auf 1: Gelingt beim Aufbau des Pools die erste Verbindung nicht,
+      # wirft er. Mit -1 versucht Hikari beim Start gar nicht zu verbinden.
+      #
+      # Gebraucht wird das fuer Szenario S5: Der chat-service muss auch
+      # dann hochfahren, wenn Postgres unten ist, denn der Anzeigeweg
+      # braucht die Datenbank nie - nur das Nachliefern braucht sie.
+      # Der erste Zugriff schlaegt dann zur Laufzeit fehl, und genau diesen
+      # Fall faengt die Nachlieferung ab.
+      initialization-fail-timeout: -1
+
 server:
   port: 8080
 
