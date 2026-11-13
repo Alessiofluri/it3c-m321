@@ -18,3 +18,11 @@ dist/
 
 # Playwright-Prüfartefakte
 .playwright-mcp/
+
+# Messdateien der Abnahme (L6 bis L10). Die Ergebnisse stehen in
+# docs/spec-live-zustellung.md und docs/plan-live-zustellung.md; die
+# Rohdateien gehoeren nicht ins Repository.
+*.log
+l8.txt
+l10*.txt
+s6*.txt

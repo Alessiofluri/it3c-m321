@@ -194,7 +194,17 @@ mit SIGKILL beendet.
 **Verzögerung:** Herunterfahren ohne offene Streams dauert heute **0,4–0,5 s** (dreimal
 gemessen mit `docker compose stop chat-service`). Dazu kommen 10 s `x-expires` und eine
 Unschärfe des Brokers, für die RabbitMQ keine Zusage macht. Erwartet: deutlich unter 15 s.
-Limit: 30 s. Gemessen in L7.
+Limit: 30 s.
+
+**Nachgemessen in L7 (13.11.2026):** fünf Läufe mit je einem offenen Client an der
+verschwindenden Instanz — **13, 13, 11, 13, 13 Sekunden** vom `--scale chat-service=1` bis zum
+Verschwinden der Queue. Das bestätigt die Rechnung: rund 0,5 s Herunterfahren, 10 s
+`x-expires`, der Rest Unschärfe des Brokers. Die Erwartung „deutlich unter 15 s" trifft zu, und
+der Abstand zum Limit beträgt mehr als das Doppelte.
+
+Dass die offenen Streams dabei nicht bremsen, zeigt die Rechnung selbst: Ohne das Schliessen
+beim `ContextClosedEvent` würde Tomcat auf sie warten, bis Docker nach zehn Sekunden mit
+SIGKILL beendet — die Summe läge dann bei gut 20 s statt bei 13.
 
 **Warum `chat.persist` und `chat.dlq` bestehen bleiben, die Stream-Queues aber nicht:**
 `chat.persist` hält die einzige Kopie auf dem Weg in die Datenbank — Arbeit, die erledigt
@@ -622,6 +632,8 @@ Messwerte zusammen, nicht die Messung allein.
 
 ### Bereits gemessen (13.11.2026)
 
+Vor dem Bauen, aus der Spezifikationsarbeit:
+
 | Messung | Ergebnis | Wo verwendet |
 |---|---|---|
 | Kopfzeilen am Fanout | `delivery_mode 2`, `content_type application/json`, `content_encoding UTF-8`, `__TypeId__`, `priority 0` | 2.2 |
@@ -630,7 +642,37 @@ Messwerte zusammen, nicht die Messung allein.
 | 5000 Nachrichten senden | 14,9 s | 3.6 |
 | Herunterfahren `chat-service` ohne Streams | 0,4–0,5 s (3 Läufe) | 3.3 |
 | `server.shutdown` in Spring Boot 3.5.16 | `graceful`, 30 s pro Phase | 3.3 |
-| Abfrageplan | siehe 3.7.4 | 3.7.4, L12 |
+| Abfrageplan, 5053 Zeilen in **einem** Raum | siehe 3.7.4 | 3.7.4, L12 |
+
+### Abnahme (13.11.2026, 19:00–21:00)
+
+| Nr | Erwartet | Gemessen | |
+|---|---|---|---|
+| **L1** | `BUILD SUCCESS` | `BUILD SUCCESS`, **64 Tests**, 0 Fehler, 0 übersprungen (53 `chat-service`, 11 `batch-writer`) | ✓ |
+| **L2** | keine Host-Portnummer | alle **11** Port-Einträge des Projekts mit `PublishedPort: 0` | ✓ |
+| **L3** | 2 × `chat.stream.*`, je `consumers = 1`, `durable`, drei Argumente, 2 Bindungen | 2 Queues, je `true` / `1` / `[{"x-expires",10000},{"x-overflow","drop-head"},{"x-max-length",950}]`, 2 Bindungen an `chat.delivery` | ✓ |
+| **L4** | `text/event-stream`, erste Körperzeile `retry: ?2000` | `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Transfer-Encoding: chunked`, **keine** `Content-Length`; erste Körperzeile `retry:2000` | ✓ |
+| **L5** | je `400` | ohne `roomId`: `400`; `roomId=abc`: `400` | ✓ |
+| **L6** | je 400 IDs, 0 Duplikate, 0 Reihenfolgefehler je Absender, `diff` = 0; `b.txt` 0 × `data:` und > 0 × `:ping` | `a1.txt` **400**, `a2.txt` **400**, je 0 Duplikate, je Absender 200 Nachrichten und **0** Reihenfolgefehler, `diff` = **0**; `b.txt` **0** × `data:`, **4** × `:ping` | ✓ |
+| **L7** | grösster Wert ≤ 30 s | fünf Läufe mit je einem Client an der verschwindenden Instanz: **13, 13, 11, 13, 13 s** | ✓ |
+| **L8** | Start ohne DB, 100 IDs, nach ≤ 60 s 100 Zeilen mehr | `Started ChatServiceApplication in 3.796 seconds` bei gestoppter DB und **keiner** Postgres-Meldung im Log; Client **100** IDs, 0 Duplikate, 0 Reihenfolgefehler; `chat.persist` hielt zeitgleich **100** `messages_ready`; nach dem Start +100 Zeilen in **12 s** | ✓ |
+| **L9** | Höchstwert ≤ 1000; Queue überlebt; 10 × `nachher` in ≤ 30 s | Höchstwert einer einzelnen Queue in `s6.log`: **1000**, exakt die Grenze; Client der pausierten Instanz **1010** IDs (1000 gepuffert + 10 `nachher`), 0 Duplikate | ✓ |
+| **L10** | 300 IDs, 0 Duplikate, 0 Reihenfolgefehler | `a1` + `a2` zusammen **300** IDs, **300 verschiedene**, 0 Duplikate | ✓ |
+| **L11** | kein Treffer zu transienten Queues | 0 Treffer auf `transient` oder `classic_queue`; die drei Treffer auf „deprecat" betreffen `management_metrics_collection` | ✓ |
+| **L12** | Index im Plan, < 10 ms pro Seite | 17 182 Zeilen in 3 Räumen. Kleiner Raum (300 Zeilen, 1,7 %): `Bitmap Index Scan on idx_message_room_sent_at`, **0,314 ms**. Grosser Raum (10 020 Zeilen, 58 %): `Index Scan Backward using idx_message_room_sent_at` + `Incremental Sort`, stoppt nach 501 Zeilen, **0,583 ms** | ✓ |
+| **L13** | keine Treffer | `grep -rn "\.stream()" chat-service/src`: **0** Treffer bei 21 Java-Dateien | ✓ |
+| **L14** | `chat-service` 300, `batch-writer` 60 | `172.18.0.2` (`chat-service`) → **300**, `172.18.0.5` (`batch-writer`) → **60** | ✓ |
+
+**Zu L12:** Der Wunschplan aus 3.7.4 — `Index Scan Backward` mit `Incremental Sort` — stellte
+sich bei echten Daten in mehreren Räumen **von selbst** ein. In 3.7.4 war er nur mit
+`enable_seqscan = off` zu sehen, weil dort alle 5053 Zeilen in einem einzigen Raum lagen. Die
+Bedingung `sent_at >= ?` tut also genau, was sie soll: Sie erscheint in beiden Plänen als
+`Index Cond`. Offener Punkt 9 (Index ohne `id`) bleibt damit bestehen, verliert aber an
+Gewicht.
+
+**Zu L2:** Ein erster Versuch mit `docker ps` statt `docker compose ps` zählte zwei
+Veröffentlichungen — beide gehörten zu Testcontainers aus dem gleichzeitig laufenden L1-Build,
+nicht zum Stack. Gemessen wird deshalb nur im Compose-Projekt.
 
 ### Tests, die diese Kriterien absichern
 
@@ -649,15 +691,15 @@ Messwerte zusammen, nicht die Messung allein.
 
 | # | Punkt | Einordnung |
 |---|---|---|
-| 1 | **Heartbeat-Einstellung des Brokers ungeprüft.** Die Schreibweise `-rabbit heartbeat 300` in `RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS` ist noch nicht ausprobiert. Greift sie nicht, bleibt der Broker bei 60, und S6 hängt wieder an der Sendegeschwindigkeit des Prüfskripts. | L14 zeigt es sofort. Ausweg: `heartbeat = 300` in einer eingebundenen `rabbitmq.conf`. |
+| 1 | ~~**Heartbeat-Einstellung des Brokers ungeprüft.**~~ **Geschlossen am 13.11.2026.** `-rabbit heartbeat 300` in `RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS` greift. L14 zeigt `300` für den `chat-service` und `60` für den `batch-writer`. Die `rabbitmq.conf` als Ausweg wird nicht gebraucht. | erledigt |
 | 2 | **Clients der pausierten Instanz verlieren Nachrichten still.** Ihr Stream reisst nicht ab, also kommt kein `Last-Event-ID`. Was `drop-head` verworfen hat, fehlt ihnen. | Möglich: nach dem Fortsetzen alle Streams schliessen, damit die Browser nachliefern. Zurückgestellt. |
 | 3 | **Restlücke durch vertauschtes Veröffentlichen.** `sentAt` wird vor dem Veröffentlichen gesetzt. Zwei gleichzeitige Requests können vertauscht am Exchange ankommen. Reisst die Verbindung genau dazwischen ab, liegt die zweite vor dem Anker und wird nie nachgeliefert. | Fenster im Mikrosekundenbereich. Hängt an `PLANUNG.md`, Punkt 3. |
 | 4 | **1 s Verzögerung reicht nicht, wenn der `batch-writer` zurückstaut.** Dann fehlen Nachrichten, die vor der Registrierung veröffentlicht, aber noch nicht geschrieben wurden. | Faustregel, kein Beweis. |
 | 5 | **Kein Nachliefern bei ausgefallener Datenbank** (S5 und S7 zugleich). | Stream läuft live weiter, die Lücke steht im Log. |
 | 6 | **Ein langsamer Client blockiert alle.** Der Listener sendet synchron. Ein voller TCP-Puffer hält die Instanz auf, ihre Queue läuft über. | Abhilfe: begrenzte Warteschlange pro Client. Zurückgestellt. |
 | 7 | **Viel Verkehr in einem Raum kann das Nachliefern immer wieder abbrechen.** Läuft `pending` dauernd über 1000, verbindet der Client endlos neu. | Bei realistischem Chatverkehr nicht zu erwarten, aber nicht ausgeschlossen. |
-| 8 | **Unschärfe beim Löschen durch `x-expires`** ist nicht zugesagt, nur gemessen (L7). | |
-| 9 | **Index ohne `id`.** Der Plan hängt von der Datenmenge ab (3.7.4). Eindeutig wäre ein Index `(room_id, sent_at, id)` als V2-Migration im `batch-writer`. | Eigene Aufgabe, nicht in diesem Auftrag. |
+| 8 | **Unschärfe beim Löschen durch `x-expires`** ist nicht zugesagt, nur gemessen. **Beziffert am 13.11.2026:** fünf Läufe ergaben 11–13 s bei 10 s `x-expires`, die Unschärfe liegt also unter 3 s. Bleibt offen, weil RabbitMQ dafür keine Zusage macht — unter Last könnte es länger dauern. Der Abstand zum Limit von 30 s ist aber mehr als das Doppelte. | bleibt offen, quantifiziert |
+| 9 | **Index ohne `id`.** Der Plan hängt von der Datenmenge ab (3.7.4). Eindeutig wäre ein Index `(room_id, sent_at, id)` als V2-Migration im `batch-writer`. **Entspannt am 13.11.2026:** Mit Daten in mehreren Räumen nutzt Postgres den vorhandenen Index in beiden gemessenen Fällen von selbst (L12, 0,3 und 0,6 ms). Der Punkt bleibt offen, weil die Planwahl weiterhin von der Verteilung abhängt — er ist aber kein Leistungsproblem. | Eigene Aufgabe, nicht in diesem Auftrag. |
 | 10 | **Lesezugriff mit dem Schreib-Benutzer.** | Sauberer: eigener Benutzer nur zum Lesen. |
 | 11 | **Gateway** muss `Last-Event-ID` durchreichen und darf SSE nicht puffern. | Kommt mit dem Gateway. |
 | 12 | **Publisher Confirms fehlen weiterhin.** | Offener Punkt aus Bewertung 1. |
