@@ -78,8 +78,15 @@ und ohne Datenbank.
 `x-expires 10000`, `x-max-length 950`, `x-overflow drop-head`, Bindung an `chat.delivery`.
 Nach einer Neuverbindung wird derselbe Name verwendet.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** Beim Prüfen ist aufgefallen, dass die Queue nicht beim Start
+entsteht, sondern erst beim ersten POST. Deswegen stimmt Spezifikation 4.1 erst ab
+Schritt 2 und noch nicht für Schritt 1. Korrigiert wurde nichts.
 
+```
+14:34:39  Live queue chat.stream.8b9a10f5-41ec-42a1-ac0a-6587369d8e35 declared
+14:35:07  Live queue chat.stream.1820a787-c827-4a2b-86fc-40a94183c475 declared
+14:35:22  Live queue chat.stream.bcb97a79-9eed-4efe-9198-f1df3ebd0bdf declared
+```
 ---
 
 ### Schritt 2 · Listener und Verbindungsregister
@@ -104,7 +111,21 @@ Prefetch 50 und `concurrency = 1` (Spezifikation 3.1, 4.3). Der Listener wirft n
 
 **Test:** Eine Nachricht für Raum A erreicht die Verbindung in Raum A, Raum B bekommt nichts.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** `MessageStreamListenerTest`: 4 Tests grün. Die WARN-Zeile belegt den
+Abriss-Pfad: Ein Fehler beim Senden trägt die Verbindung aus, und der Listener wirft nicht.
+Im laufenden Stack mit zwei Instanzen zeigen beide Queues `consumers 1` und `messages_ready 0`.
+Die Nachricht `3aa32f0f` wurde auf Instanz 1 publiziert und auf **beiden** Instanzen verworfen,
+weil im Raum noch kein Stream offen ist. Damit ist belegt: Jede Instanz hat eine eigene Queue,
+es gibt kein Competing Consumers. Korrigiert wurde nichts.
+
+    16:16:51.354  WARN  Stream for room 3c85952e-… removed after a failed send: client aborted
+
+    chat.stream.f0b7f459-3015-4abd-b7bf-4dada4e6226e   consumers 1   messages_ready 0
+    chat.stream.1aeadf98-3885-4697-a336-d959f538f666   consumers 1   messages_ready 0
+
+    15:19:31.830  chat-service-1  Message 3aa32f0f-… published to queue chat.persist and exchange chat.delivery
+    15:19:31.833  chat-service-1  Message 3aa32f0f-… dropped, no open stream for room 39acf48b-…
+    15:19:31.901  chat-service-2  Message 3aa32f0f-… dropped, no open stream for room 39acf48b-…
 
 ---
 
@@ -136,7 +157,27 @@ zuschauen.
 **Test:** Integrationstest für das SSE-Format (`retry:2000`, `id:` + einzeiliges `data:`),
 dazu L4 und L5.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** Gemessen im laufenden Stack an Instanz 1, Client und POST im selben
+Container im Netz `chat-net`. Antwort `200` mit `Content-Type: text/event-stream`,
+`Cache-Control: no-cache`, `Transfer-Encoding: chunked`, ohne `Content-Length` (L4). Die erste
+Körperzeile ist `retry:2000`, danach je Nachricht `id:` und einzeiliges `data:`, ohne `event:`,
+ohne Leerzeichen nach dem Doppelpunkt. Die Zeilen enden nur mit LF, `cat -A` zeigt kein `^M`.
+`sentAt` hat 6 Nachkommastellen. Ohne `roomId` und mit `roomId=abc` kommt je `400` (L5).
+Korrigiert wurde nichts.
+
+    HTTP/1.1 200
+    Cache-Control: no-cache
+    Content-Type: text/event-stream
+    Transfer-Encoding: chunked
+
+    retry:2000$
+    $
+    id:a5d306bf-14ad-44e7-b509-75b582db8ebe$
+    data:{"id":"a5d306bf-…","roomId":"39acf48b-…","senderId":"s1","senderName":"Test","content":"Schritt 3","sentAt":"2026-11-13T18:11:51.842417Z"}$
+    $
+
+    ohne roomId: 400
+    roomId=abc:   400
 
 ---
 
@@ -161,7 +202,25 @@ Shutdown bis zu 30 s auf die offenen Streams.
 
 **Test:** L6 für den Ping (`b.txt` enthält `:ping`), L7 für das Herunterfahren.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** `StreamPingTest` (4) und `StreamShutdownTest` (3): 7 Tests grün. Die
+WARN-Zeile aus `StreamWriter` belegt, dass ein Ping an eine abgerissene Verbindung diese austrägt.
+`StreamShutdown` schliesst beim Herunterfahren alle offenen Streams, auch wenn keiner offen ist
+(2 / 0 / 2). Im laufenden Stack hielt ein Client in einem stillen Raum 35 s an Instanz 1: Er
+bekam `retry:2000`, zwei `:ping` und kein `data:`. Das passt zu einem Intervall von 15 s, und
+ein Ping trägt kein `id:`. Korrigiert wurde nichts.
+
+    19:39:57.039  WARN  StreamWriter    Stream for room 0139d3c5-… removed after a failed send: client aborted
+    19:39:57.088  INFO  StreamShutdown  Shutting down, closing 2 open streams
+    19:39:57.095  INFO  StreamShutdown  Shutting down, closing 0 open streams
+    19:39:57.101  INFO  StreamShutdown  Shutting down, closing 2 open streams
+
+    retry:2000$
+    $
+    :ping$
+    $
+    :ping$
+    $
+    --- ping: 2  data: 0
 
 ---
 
@@ -185,7 +244,20 @@ starten.
 
 **Test:** L8 — `chat-service` startet neu, während Postgres gestoppt ist.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** L8 im laufenden Stack. Zählerstand vorher: 5162. Postgres und
+`batch-writer` um 18:54:25 gestoppt, `chat-service` um 18:54:27 neu gestartet:
+`Started ChatServiceApplication` um 18:54:34, also ohne Datenbank. Bei weiterhin gestoppter
+Datenbank empfing ein Client an Instanz 1 alle 100 gesendeten Nachrichten (`TAG=l8`). Nach dem
+Start von Postgres und `batch-writer` stand der Zählerstand auf 5262, also +100. Der Live-Weg
+braucht die Datenbank nicht, und der Schreibweg holt nach. Korrigiert wurde nichts.
+
+    18:54:24  count(*) = 5162
+    18:54:25  stop postgres batch-writer
+    18:54:27  restart chat-service
+    18:54:34  Started ChatServiceApplication in 4.208 seconds
+              grep -c '^id:' l8.txt  →  100
+              start postgres batch-writer
+              count(*) = 5262
 
 ---
 
@@ -221,7 +293,23 @@ anzulegen, die auseinanderlaufen könnte.
 **Test:** Testcontainers-Postgres mit dem Schema aus `V1__create_message_table.sql`: Blättern
 über mehr als 500 Zeilen, Gleichstand bei `sent_at`. Zusätzlich L12.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** `MessageHistoryRepositoryIntegrationTest`: 5 Tests grün, gegen
+Testcontainers `postgres:16` mit dem Schema aus `V1__create_message_table.sql` —
+`pagesThroughMoreRowsThanOnePageHolds`, `breaksTiesByIdWhenTimestampsAreEqual`,
+`findsTheTimestampOfTheAnchor`, `doesNotFindAnAnchorFromAnotherRoom`,
+`returnsExactlyWhatWasWritten`. L12 im laufenden Stack: 300 Nachrichten in einem zweiten Raum
+neben 5262 im ersten. Der Planer wählt `Index Scan Backward using idx_message_room_sent_at` mit
+`Incremental Sort`, liefert 299 Zeilen (der Anker selbst ist ausgeschlossen) und braucht
+0,197 ms, Limit 10 ms. Korrigiert wurde nichts.
+
+    Limit  (actual rows=299)
+      ->  Incremental Sort  Sort Key: sent_at, id  Presorted Key: sent_at
+            ->  Index Scan Backward using idx_message_room_sent_at on message
+                  Index Cond: (room_id = '7f3c2a10-…') AND (sent_at >= '…19:06:58.076961+00')
+                  Filter: ROW(sent_at, id) > ROW('…19:06:58.076961+00', 'f65742e9-…')
+                  Rows Removed by Filter: 1
+    Planning Time: 0.213 ms
+    Execution Time: 0.197 ms
 
 ---
 
@@ -248,7 +336,35 @@ anzulegen, die auseinanderlaufen könnte.
 
 **Test:** Integrationstest „Nachliefern ohne Duplikat“, Testfall mit raumfremder ID, dazu L10.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** `StreamDeliveryTest`: 7 Tests grün —
+`sendsPendingMessagesAfterTheCatchUp`, `sendsImmediatelyOnceLive`,
+`doesNotSendAMessageTwiceWhenItIsBothPendingAndInTheDatabase`,
+`remembersOnlyRecentIdsForDeduplication`, `goesLiveWhenTheDatabaseIsNotReachable`,
+`pagesUntilAPageIsNotFull`, `goesLiveWhenTheAnchorIsNotFound`. Die Tests laufen mit Mocks, nicht
+gegen eine echte Datenbank. Den Fall „pending und DB überschneiden sich“ belegt im echten Stack
+L10.
+
+L10 mit zwei Instanzen: 300 Nachrichten an Raum A, nach jeder 50. eine Pause von 1 s. Client a
+an Instanz 1 bricht nach 8 s ab, Client b verbindet sich 1 s später mit `Last-Event-ID` an
+Instanz 2. Ein Referenzclient bleibt die ganze Zeit an Instanz 1. Ergebnis: a 150 + b 150 = 300
+IDs, 0 Duplikate, 0 Reihenfolgefehler, Referenz 300, das `data:` aus dem Nachliefern ist
+zeichengleich mit dem live empfangenen. Instanz 2 meldet `Catch-up … delivered 100 messages`
+und `0 buffered messages sent, 50 skipped as duplicates`. Ping und Nachliefern laufen auf
+getrennten Threads (`stream-ping-*`, `stream-catchup-*`).
+
+Korrigiert wurde nichts am Code, nur am Messverfahren. Clients, die per `docker run … > datei`
+unter Git Bash schreiben, hörten mitten im Lauf auf zu lesen. Der Dienst blieb dann 60 s im
+Schreiben hängen (`SocketTimeoutException`), und am Ende fehlten 14–15 Nachrichten. Gemessen wird
+deshalb mit allen Clients in einem Container, der in Dateien im Container schreibt.
+
+    LAST=86ae8dde-769e-409a-a4d2-31b091607c10
+    IDs a: 150  b: 150  zusammen: 300
+    Duplikate: 0
+    Reihenfolgefehler: 0
+    Referenz: 300
+    data-Abweichungen b gegen live: 0
+    19:19:43.611  chat-service-2  Catch-up for room 39acf48b-… delivered 100 messages
+    19:19:43.611  chat-service-2  Room 39acf48b-… switched to live, 0 buffered messages sent, 50 skipped as duplicates
 
 ---
 
@@ -271,7 +387,24 @@ Grenze und den Ablauf gleichzeitig.
 **Test:** Unit-Test „pending am Limit“: die 1001. Nachricht schliesst den Emitter. L9 nur als
 Messung.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** `StreamLimitsTest`: 2 Tests grün. Ist `pending` voll, wird der
+Emitter geschlossen (`buffer full during catch-up (1000 messages)`). Laufen 200 Nachlieferungen,
+wird jede weitere abgewiesen (`too many catch-ups running (200)`).
+
+L9 als Messung: Client an Instanz 1, Instanz 1 per `docker pause` angehalten, 5000 Nachrichten
+über Instanz 2 (19:26:12 bis 19:26:43), dann `unpause` und 10 Nachrichten `nachher`. Der
+Höchstwert von `messages_ready + messages_unacknowledged` in `s6.log` ist 1000. Die Queue von
+Instanz 1 (`chat.stream.1cd94c57-…`) besteht nach dem Fortsetzen weiter. Der Client erhielt
+1000 der 5000: die ersten 50 (unbestätigt im Socket, Prefetch) und die letzten 950 (ready, ältere
+per `drop-head` verworfen), danach alle 10 `nachher` innerhalb von 30 s. Das entspricht
+Spezifikation 3.5. Die Lücke 51–4050 fehlt dem Client still, wie in offenem Punkt 2 beschrieben.
+Korrigiert wurde nichts am Code. Im Messskript ist `docker pause` statt `docker compose pause`
+nötig, weil das alle Instanzen anhält, und unter Git Bash `MSYS_NO_PATHCONV=1` vor `docker exec`.
+
+    Hoechstwert aller chat.stream.*: 1000
+    Queue von Instanz 1 noch da: 1
+    Client vorher: 1000  nachher: 10
+    1-50: 50  Mitte: 0  4051-5000: 950
 
 ---
 
@@ -299,7 +432,29 @@ damit vorher kein Schritt von einer geänderten Broker-Einstellung abhängt.
 
 **Test:** L14 (`chat-service` 300, `batch-writer` 60) und L11.
 
-**Geprüft und korrigiert:** _(nach dem Schritt ausfüllen)_
+**Geprüft und korrigiert:** L14: `rabbitmqctl list_connections peer_host timeout`, Adressen über
+`docker network inspect chat-net` zugeordnet: `chat-service-1` 300, `chat-service-2` 300,
+`batch-writer` 60. Die Broker-Einstellung `-rabbit heartbeat 300` greift also (offener Punkt 1
+der Spezifikation erledigt), und der Schreibweg bleibt bei 60. L11: keine Warnung zu
+transienten Queues im Broker-Log. L3 nachgeprüft: zwei Queues, je `durable`, `consumers 1`,
+`x-expires 10000`, `x-max-length 950`, `x-overflow drop-head`. Gegenprobe zur Konfiguration: Mit
+`STREAM_QUEUE_MAX_LENGTH=900` entsteht eine Queue mit `x-max-length 900`. Der Wert kommt also
+aus der Umgebung, nicht aus dem Code. Nach dem Zurücksetzen wieder 950. Der Hinweis auf die
+Abweichung steht in `PLANUNG.md` 3.4. Die verbleibenden Erwähnungen von „web-gateway“ in
+`RabbitConfig.java` und `MessageController.java` sind korrekt: Sie beschreiben die Abweichung
+und den REST-Weg. `mvn -pl chat-service test`: 53 Tests grün. Korrigiert wurde nichts.
+
+    172.18.0.2  300   it3c-m321-chat-service-1
+    172.18.0.6  300   it3c-m321-chat-service-2
+    172.18.0.5   60   it3c-m321-batch-writer-1
+
+    chat.stream.0315a2b9-…  consumers 1  [x-expires 10000, x-overflow drop-head, x-max-length 950]
+    chat.stream.7852c452-…  consumers 1  [x-expires 10000, x-overflow drop-head, x-max-length 950]
+
+    STREAM_QUEUE_MAX_LENGTH=900  →  chat.stream.7bee6c95-…  x-max-length 900
+
+Korrigiert: veralteter Kommentar in `ChatMessage.java`, der das `web-gateway` noch als
+Verbraucher von `chat.delivery` nannte.
 
 ---
 
