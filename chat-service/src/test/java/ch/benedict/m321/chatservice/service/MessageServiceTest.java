@@ -70,6 +70,27 @@ class MessageServiceTest {
         assertEquals("Hallo", publisher.published.content());
     }
 
+    /**
+     * Der Zeitstempel darf nicht genauer sein, als die Datenbank speichert.
+     * Sonst sähe eine nachgelieferte Nachricht anders aus als dieselbe
+     * Nachricht live. Mikrosekunden heisst: die Nanosekunden sind ein
+     * Vielfaches von 1000.
+     */
+    @Test
+    void truncatesTimestampToMicroseconds() {
+        RecordingPublisher publisher = new RecordingPublisher();
+        MessageService messageService = new MessageService(publisher);
+        SendMessageRequest request =
+                new SendMessageRequest(UUID.randomUUID(), "anna", "Anna Muster", "Hallo");
+
+        AcceptedResponse response = messageService.accept(request);
+
+        int nanos = response.sentAt().getNano();
+        int belowMicroseconds = nanos % 1000;
+        assertEquals(0, belowMicroseconds);
+        assertEquals(response.sentAt(), publisher.published.sentAt());
+    }
+
     @Test
     void assignsADifferentIdEveryTime() {
         RecordingPublisher publisher = new RecordingPublisher();

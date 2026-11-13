@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
@@ -36,7 +37,13 @@ public class MessageService {
         log.info("Message received for room {} with {} characters", request.roomId(), contentLength);
 
         UUID messageId = UUID.randomUUID();
-        Instant sentAt = Instant.now();
+
+        // Auf Mikrosekunden gekürzt, weil die Spalte sent_at (timestamptz)
+        // nicht genauer speichert. Ohne das Kürzen hätte dieselbe Nachricht
+        // live neun Nachkommastellen und aus der Datenbank nur sechs — der
+        // Zeitstempel sähe je nach Weg anders aus.
+        Instant now = Instant.now();
+        Instant sentAt = now.truncatedTo(ChronoUnit.MICROS);
 
         ChatMessage message = new ChatMessage(
                 messageId,
