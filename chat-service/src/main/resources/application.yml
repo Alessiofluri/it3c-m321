@@ -8,6 +8,22 @@ spring:
     port: 5672
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    # 300 Sekunden, nur fuer diesen Dienst. Ausgehandelt wird pro
+    # Verbindung das Minimum aus Client- und Brokerwert; der Broker ist in
+    # docker-compose.yml auf 300 gehoben, hier kommt min(300, 300) = 300
+    # heraus.
+    #
+    # Gebraucht wird das fuer Szenario S6: Eine pausierte Instanz antwortet
+    # nicht mehr auf Heartbeats. Der Broker wuerde ihre Verbindung nach
+    # etwa zwei ausgebliebenen Heartbeats schliessen, und dann liefe
+    # x-expires los - die Queue samt gepufferter Nachrichten waere weg,
+    # bevor die Instanz fortgesetzt wird.
+    #
+    # Der Preis: Eine Instanz, die STUMM stirbt, behaelt ihre Queue bis zu
+    # etwa zehn Minuten. Harmlos, weil die Queue auf 1000 Nachrichten
+    # gedeckelt ist - die Grenze macht den langen Heartbeat erst
+    # vertretbar.
+    requested-heartbeat: 300s
 
   datasource:
     # Dieselbe Regel wie beim Broker: im Netz "postgres", sonst "localhost".
@@ -27,6 +43,18 @@ spring:
       # Der erste Zugriff schlaegt dann zur Laufzeit fehl, und genau diesen
       # Fall faengt die Nachlieferung ab.
       initialization-fail-timeout: -1
+
+# Grenzen der Stream-Queye je Instanz. Vorgabewerte hier, damit der Dienst
+# auch ohne .env startet; im Betrieb kommen sie aus docker-compose.yml.
+#
+# Die Argumente muessen bei JEDER Deklaration gleich sein, sonst scheitert
+# sie mit PRECONDITION_FAILED. Geaenderte Werte greifen deshalb erst nach
+# einem Neustart - und ein Neustart bringt ohnehin einen neuen Queue-Namen.
+stream:
+  queue:
+    max-length: ${STREAM_QUEUE_MAX_LENGTH:950}
+    expires-ms: ${STREAM_QUEUE_EXPIRES_MS:10000}
+  prefetch: ${STREAM_PREFETCH:50}
 
 server:
   port: 8080

@@ -9,6 +9,17 @@ spring:
     port: 5672
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    # Die einzige Aenderung an diesem Dienst fuer Bewertung 2, und sie
+    # haelt ihn beim Alten. Der Broker steht jetzt auf 300 Sekunden, weil
+    # der chat-service das fuer Szenario S6 braucht. Ausgehandelt wird pro
+    # Verbindung das Minimum, hier also min(60, 300) = 60.
+    #
+    # Ohne diese Zeile haenge der Wert an einem Standardwert der
+    # Bibliothek, den niemand im Code sieht. Und mit 300 haenge ein stumm
+    # gestorbener batch-writer bis zu zehn Minuten mit 500 unbestaetigten
+    # Nachrichten fest statt einer Minute - eine Verschlechterung am
+    # Schreibweg aus Bewertung 1.
+    requested-heartbeat: 60s
 
   datasource:
     # Dieselbe Regel wie beim Broker: im Netz "postgres", sonst "localhost".

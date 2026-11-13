@@ -12,6 +12,7 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -36,21 +37,19 @@ public class RabbitConfig {
      * Loeschen etwas Zeit. Nach unten muss der Wert ueber dem
      * recoveryInterval von Spring (5 s) liegen, damit ein kurzer
      * Netzaussetzer die Queue nicht kostet.
-     *
-     * Ab Schritt 9 kommt der Wert aus der Umgebung.
      */
-    private static final int STREAM_QUEUE_EXPIRES_MS = 10_000;
+    @Value("${stream.queue.expires-ms}")
+    private int streamQueueExpiresMs;
 
     /**
      * Wie viele "ready" Nachrichten die Stream-Queue hoechstens haelt.
      *
      * x-max-length zaehlt nur "ready", nicht die bereits beim Verbraucher
-     * liegenden unbestaetigten. Mit Prefetch 50 (Schritt 2) sind es zusammen
+     * liegenden unbestaetigten. Mit dem Prefetch darunter sind es zusammen
      * hoechstens 1000 — die Grenze aus Szenario S6.
-     *
-     * Ab Schritt 9 kommt der Wert aus der Umgebung.
      */
-    private static final int STREAM_QUEUE_MAX_LENGTH = 950;
+    @Value("${stream.queue.max-length}")
+    private int streamQueueMaxLength;
 
     /**
      * Wie viele unbestaetigte Nachrichten der Broker dem Listener
@@ -63,10 +62,9 @@ public class RabbitConfig {
      * abgeleitet — hier wird einzeln zugestellt. 50 ist ein Puffer, der die
      * Leitung beschaeftigt haelt, ohne dass bei einem Abbruch viel erneut
      * zugestellt werden muss.
-     *
-     * Ab Schritt 9 kommt der Wert aus der Umgebung.
      */
-    private static final int STREAM_PREFETCH = 50;
+    @Value("${stream.prefetch}")
+    private int streamPrefetch;
 
     /**
      * Wie viele Consumer gleichzeitig aus der Stream-Queue lesen: genau
@@ -100,9 +98,13 @@ public class RabbitConfig {
 
     /**
      * Der Zustellweg. Fanout heisst: JEDE gebundene Queue bekommt eine
-     * Kopie. Das ist genau richtig, weil jede web-gateway-Instanz jede
-     * Nachricht sehen muss — nur sie weiss, welche ihrer WebSocket-Clients
-     * im betroffenen Raum sitzen.
+     * Kopie. Das ist genau richtig, weil jede chat-service-Instanz jede
+     * Nachricht sehen muss — nur sie weiss, welche ihrer offenen
+     * SSE-Streams im betroffenen Raum haengen.
+     *
+     * In PLANUNG.md ist dafuer das web-gateway vorgesehen. Mit
+     * docs/spec-live-zustellung.md uebernimmt das der chat-service; der
+     * Exchange selbst bleibt unveraendert.
      */
     @Bean
     public FanoutExchange deliveryExchange() {
@@ -140,8 +142,8 @@ public class RabbitConfig {
         UUID instanceId = UUID.randomUUID();
         String queueName = QueueNames.STREAM_QUEUE_PREFIX + instanceId;
         Queue queue = QueueBuilder.durable(queueName)
-                .expires(STREAM_QUEUE_EXPIRES_MS)
-                .maxLength(STREAM_QUEUE_MAX_LENGTH)
+                .expires(streamQueueExpiresMs)
+                .maxLength(streamQueueMaxLength)
                 .overflow(QueueBuilder.Overflow.dropHead)
                 .build();
         // Die Meldung ordnet in der Abnahme jeder Instanz ihre Queue zu.
@@ -202,7 +204,7 @@ public class RabbitConfig {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(messageConverter);
-        factory.setPrefetchCount(STREAM_PREFETCH);
+        factory.setPrefetchCount(streamPrefetch);
         factory.setConcurrentConsumers(STREAM_CONCURRENCY);
         factory.setMaxConcurrentConsumers(STREAM_CONCURRENCY);
 

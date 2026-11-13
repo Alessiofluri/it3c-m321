@@ -28,6 +28,14 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      # Obergrenze fuer den Heartbeat, in Sekunden. Ausgehandelt wird pro
+      # Verbindung das MINIMUM aus Client- und Brokerwert: Eine Zeile im
+      # chat-service allein bewirkt also nichts, der Broker bliebe bei 60
+      # und gewaenne. Gebraucht wird der lange Heartbeat fuer Szenario S6 -
+      # eine pausierte Instanz antwortet nicht mehr, und ihre Queue darf
+      # deshalb nicht verschwinden. Der batch-writer setzt sich selbst
+      # wieder auf 60, damit der Schreibweg unveraendert bleibt.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit heartbeat 300"
     networks:
       - chat-net
     healthcheck:
@@ -49,6 +57,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Grenzen der Stream-Queue. Die ersten beiden zusammen ergeben die
+      # 1000 aus Szenario S6.
+      STREAM_QUEUE_MAX_LENGTH: ${STREAM_QUEUE_MAX_LENGTH:-950}
+      STREAM_PREFETCH: ${STREAM_PREFETCH:-50}
+      STREAM_QUEUE_EXPIRES_MS: ${STREAM_QUEUE_EXPIRES_MS:-10000}
     # Absichtlich NUR rabbitmq, nicht postgres. Der Anzeigeweg braucht die
     # Datenbank nie, und Szenario S5 verlangt, dass dieser Dienst auch
     # hochfaehrt, wenn Postgres unten ist. Mit einem depends_on auf

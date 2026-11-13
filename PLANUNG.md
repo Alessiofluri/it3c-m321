@@ -160,6 +160,14 @@ WebSocket und interner API.
 Auf dem *Rückweg* ist das Gateway sehr wohl an RabbitMQ: es konsumiert `chat.delivery`, um
 seine verbundenen Clients zu bedienen. Das Gateway ist also **Consumer, aber kein Producer**.
 
+> **Abweichung seit Bewertung 2 (13.11.2026):** Verbraucher von `chat.delivery` ist jetzt der
+> `chat-service` selbst, nicht das `web-gateway`, und zugestellt wird über **Server-Sent
+> Events** statt WebSocket. Jede `chat-service`-Instanz hängt mit einer eigenen Queue am
+> Fanout. Begründung und Vertrag stehen in
+> [`docs/spec-live-zustellung.md`](docs/spec-live-zustellung.md), Abschnitt 1. Auf dem
+> Sendeweg bleibt alles wie unten beschrieben; auf dem Rückweg muss das Gateway später nur
+> noch `Last-Event-ID` durchreichen und darf den Stream nicht puffern.
+
 ```mermaid
 sequenceDiagram
     autonumber

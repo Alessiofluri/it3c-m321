@@ -12,7 +12,7 @@ public final class QueueNames {
     /** Schreibweg: hier holt der batch-writer die Nachrichten ab. */
     public static final String PERSIST_QUEUE = "chat.persist";
 
-    /** Zustellweg: fanout an alle web-gateway-Instanzen. */
+    /** Zustellweg: fanout an alle chat-service-Instanzen. */
     public static final String DELIVERY_EXCHANGE = "chat.delivery";
 
     /**
