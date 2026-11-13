@@ -590,10 +590,22 @@ Anzahl, Duplikate (erwartet `0`), Reihenfolgefehler **je Absender** (`TAG` setze
 Ob zwei Clients genau dieselben Nachrichten bekommen haben:
 
 ```bash
-diff <(grep '^id:' a1.txt | sort) <(grep '^id:' a2.txt | sort) | wc -l
+grep '^id:' a1.txt | sort > ids1; grep '^id:' a2.txt | sort > ids2; comm -3 ids1 ids2 | wc -l
 ```
 
 erwartet: `0`.
+
+**Zwei Zwischendateien statt `diff <(…) <(…)`.** Die erste Fassung dieses Befehls benutzte
+Prozess-Substitution. Die kennt die BusyBox-`sh` im `curlimages/curl`-Container **nicht**: Der
+Shell-Fehler geht nach stderr, `wc -l` zählt die leere Standardausgabe, und heraus kommt `0` —
+egal ob die Listen gleich sind. Der Befehl hätte also immer „bestanden" gemeldet. Gefunden beim
+zweiten Abnahmelauf am 13.11.2026, danach neu gemessen.
+
+`comm -3` zeigt die Zeilen, die nur in einer der beiden Listen stehen. Zur Gegenprobe:
+
+```bash
+echo "gemeinsam: $(comm -12 ids1 ids2 | wc -l)  nur a1: $(comm -23 ids1 ids2 | wc -l)  nur a2: $(comm -13 ids1 ids2 | wc -l)"
+```
 
 Queues und Bindungen am Fanout:
 
@@ -653,7 +665,7 @@ Vor dem Bauen, aus der Spezifikationsarbeit:
 | **L3** | 2 × `chat.stream.*`, je `consumers = 1`, `durable`, drei Argumente, 2 Bindungen | 2 Queues, je `true` / `1` / `[{"x-expires",10000},{"x-overflow","drop-head"},{"x-max-length",950}]`, 2 Bindungen an `chat.delivery` | ✓ |
 | **L4** | `text/event-stream`, erste Körperzeile `retry: ?2000` | `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Transfer-Encoding: chunked`, **keine** `Content-Length`; erste Körperzeile `retry:2000` | ✓ |
 | **L5** | je `400` | ohne `roomId`: `400`; `roomId=abc`: `400` | ✓ |
-| **L6** | je 400 IDs, 0 Duplikate, 0 Reihenfolgefehler je Absender, `diff` = 0; `b.txt` 0 × `data:` und > 0 × `:ping` | `a1.txt` **400**, `a2.txt` **400**, je 0 Duplikate, je Absender 200 Nachrichten und **0** Reihenfolgefehler, `diff` = **0**; `b.txt` **0** × `data:`, **4** × `:ping` | ✓ |
+| **L6** | je 400 IDs, 0 Duplikate, 0 Reihenfolgefehler je Absender, gleiche ID-Listen; `b.txt` 0 × `data:` und > 0 × `:ping` | `a1.txt` **400**, `a2.txt` **400**, je 0 Duplikate, je Absender 200 Nachrichten und **0** Reihenfolgefehler; `b.txt` **0** × `data:`, **4** bzw. **5** × `:ping` (zwei Läufe). Vergleich der ID-Listen **neu gemessen** ohne Prozess-Substitution: `diff` Exit-Code **0**, keine Fehlerausgabe, `comm` zeigt **400** gemeinsame IDs, **0** nur in `a1`, **0** nur in `a2` | ✓ |
 | **L7** | grösster Wert ≤ 30 s | fünf Läufe mit je einem Client an der verschwindenden Instanz: **13, 13, 11, 13, 13 s** | ✓ |
 | **L8** | Start ohne DB, 100 IDs, nach ≤ 60 s 100 Zeilen mehr | `Started ChatServiceApplication in 3.796 seconds` bei gestoppter DB und **keiner** Postgres-Meldung im Log; Client **100** IDs, 0 Duplikate, 0 Reihenfolgefehler; `chat.persist` hielt zeitgleich **100** `messages_ready`; nach dem Start +100 Zeilen in **12 s** | ✓ |
 | **L9** | Höchstwert ≤ 1000; Queue überlebt; 10 × `nachher` in ≤ 30 s | Höchstwert einer einzelnen Queue in `s6.log`: **1000**, exakt die Grenze; Client der pausierten Instanz **1010** IDs (1000 gepuffert + 10 `nachher`), 0 Duplikate | ✓ |
@@ -673,6 +685,25 @@ Gewicht.
 **Zu L2:** Ein erster Versuch mit `docker ps` statt `docker compose ps` zählte zwei
 Veröffentlichungen — beide gehörten zu Testcontainers aus dem gleichzeitig laufenden L1-Build,
 nicht zum Stack. Gemessen wird deshalb nur im Compose-Projekt.
+
+**Zu L6 — der Vergleich der ID-Listen war zuerst wertlos.** Der ursprüngliche Befehl benutzte
+`diff <(…) <(…)`, und die BusyBox-`sh` des Messcontainers kennt keine Prozess-Substitution. Er
+hätte immer `0` gemeldet. Neu gemessen mit Zwischendateien, Ergebnis in der Tabelle. Die
+Schwäche lag im Messbefehl, nicht im Dienst: Die übrigen Zahlen desselben Laufs — je 400
+verschiedene IDs, je Absender 200 Nachrichten ohne Reihenfolgefehler — trugen den Schluss schon
+vorher.
+
+**Zu L7 — die Neuverbindung des Clients ist nicht gemessen.** Das Kriterium nennt sie, die
+Messung zeigt sie nicht: `curl` wertet `retry:` nicht aus und verbindet sich nicht von selbst
+neu, das tut nur ein Browser. Gemessen ist das Verschwinden der Queue. Dass der Stream dabei
+**sauber** endet und nicht bis zum SIGKILL hängt, folgt aus der Zeit: 11–13 s passen zu 0,5 s
+Herunterfahren plus 10 s `x-expires`; bei einem blockierten Shutdown lägen zehn weitere
+Sekunden dazwischen. Die Neuverbindung selbst zeigt erst ein echter Browser-Client, und der
+gehört zum `web-gateway` (Abschnitt 1).
+
+**Zur Auflösung von L7:** Zwischen zwei Zählungen steht kein `sleep`; der Takt ist die Laufzeit
+eines `rabbitmqctl`-Aufrufs, also etwa eine Sekunde. Die Werte sind deshalb auf ±1 s genau — bei
+einem Limit von 30 s ohne Bedeutung.
 
 ### Tests, die diese Kriterien absichern
 
